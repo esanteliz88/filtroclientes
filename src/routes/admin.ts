@@ -303,6 +303,7 @@ export async function adminRoutes(app: App) {
     const exists = await AppUser.findOne({ email }).lean();
     if (exists) return reply.code(409).send({ error: 'user_exists' });
 
+    const passwordWasProvided = data.password !== undefined;
     const rawPassword = data.password ?? crypto.randomBytes(16).toString('hex');
     const passwordHash = await bcrypt.hash(rawPassword, 12);
 
@@ -316,10 +317,16 @@ export async function adminRoutes(app: App) {
       status: data.status
     });
 
-    return reply.code(201).send({
-      user: exposeUser(created.toObject() as Record<string, unknown>),
-      password: rawPassword
-    });
+    return reply.code(201).send(
+      passwordWasProvided
+        ? {
+            user: exposeUser(created.toObject() as Record<string, unknown>)
+          }
+        : {
+            user: exposeUser(created.toObject() as Record<string, unknown>),
+            generatedPassword: rawPassword
+          }
+    );
   });
 
   app.get('/users', { config: { auth: true } }, async (request: FastifyRequest) => {
