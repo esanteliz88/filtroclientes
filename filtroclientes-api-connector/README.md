@@ -1,33 +1,40 @@
-# FiltroClientes API Connector (WordPress Plugin)
+# FiltroClientes Connector Pro
+
+Plugin WordPress con:
+- CPT `fc_submission` para almacenar registros sincronizados desde API.
+- Panel admin con Dashboard, Configuracion y Registros.
+- Sincronizacion manual desde `/api/submissions`.
+- Shortcode para mostrar tabla de registros.
+
+## Estructura
+- `filtroclientes-api-connector.php` bootstrap
+- `includes/` clases (settings, API client, CPT, sync, admin, shortcode)
+- `assets/css/admin.css` estilo admin
 
 ## Instalacion
-1. Copia la carpeta `filtroclientes-api-connector` en `wp-content/plugins/`.
-2. Activa el plugin desde WordPress.
-3. Ve a `Settings > FiltroClientes API` y configura:
+1. Copiar carpeta `filtroclientes-api-connector` a `wp-content/plugins/`.
+2. Activar plugin.
+3. Ir a `FiltroClientes > Conexion API`.
+4. Configurar:
    - Base URL
    - Client ID
    - Client Secret
+   - Limite sync
 
-## Requisitos de permisos en API
-El `client` configurado debe tener:
+## Permisos requeridos en API
+El client configurado en WP debe tener:
 - scope: `read`
-- permission: `GET ^/api/submissions$`
+- permissions:
+  - `GET ^/api/submissions$`
+
+## Sincronizar
+Ir a `FiltroClientes > Dashboard` y hacer click en **Sincronizar ahora**.
 
 ## Shortcode
-Usa en una pagina:
-
-`[filtroclientes_submissions limit="20" only_with_match="false"]`
-
-Opcionales:
-- `skip`
-- `source_user_id`
-
-Ejemplo:
-
-`[filtroclientes_submissions limit="50" skip="0" only_with_match="true" source_user_id="123"]`
+`[filtroclientes_registros limit="20"]`
 
 ## Seguridad recomendada
-Tambien puedes definir credenciales en `wp-config.php`:
+Definir secretos en `wp-config.php`:
 
 ```php
 define('FILTROCLIENTES_API_BASE_URL', 'https://apiclientes.guiaysalud.com');
@@ -35,4 +42,4 @@ define('FILTROCLIENTES_API_CLIENT_ID', 'saga-api');
 define('FILTROCLIENTES_API_CLIENT_SECRET', 'tu-secret');
 ```
 
-Si defines constantes, el plugin las prioriza sobre la configuracion de base de datos.
+Las constantes tienen prioridad sobre settings guardados.

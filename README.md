@@ -1,6 +1,6 @@
 # FiltroClientes WP Plugin
 
-Rama dedicada solo al plugin WordPress.
+Rama dedicada solo al plugin WordPress para conectar con FiltroClientes API.
 
-Carpeta del plugin: iltroclientes-api-connector
-
+Carpeta del plugin:
+- `filtroclientes-api-connector`
