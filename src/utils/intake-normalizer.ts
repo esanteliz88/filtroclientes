@@ -63,6 +63,7 @@ export type NormalizedIntake = {
   form_id: string | null;
   entry_date: string | null;
   user_id: number | null;
+  user_ref: string | null;
   user_ip: string | null;
   centro: string[];
 };
@@ -77,6 +78,15 @@ function toNullableNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function toUserRef(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  const asString = String(cleanText(value) ?? '').trim();
+  if (!asString) return null;
+  const asNumber = Number(asString);
+  if (Number.isFinite(asNumber)) return null;
+  return asString;
 }
 
 export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake {
@@ -110,6 +120,7 @@ export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake
     form_id: toNullableString(payload.form_id),
     entry_date: toNullableString(payload.entry_date),
     user_id: toNullableNumber(payload.user_id),
+    user_ref: toUserRef(payload.user_id),
     user_ip: toNullableString(payload.user_ip),
     centro: normalizeCentroList(payload.centro)
   };
