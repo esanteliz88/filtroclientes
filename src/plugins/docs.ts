@@ -20,7 +20,7 @@ function verifyBasicAuth(request: FastifyRequest, reply: FastifyReply, user: str
   if (inUser !== user || inPass !== pass) return unauthorized(reply);
 }
 
-function buildOpenApi() {
+function buildOpenApi(port: number) {
   return {
     openapi: '3.0.3',
     info: {
@@ -28,7 +28,7 @@ function buildOpenApi() {
       version: '0.1.0',
       description: 'API con OAuth2 client credentials, scopes y permisos por endpoint.'
     },
-    servers: [{ url: 'http://localhost:3000' }],
+    servers: [{ url: `http://localhost:${port}` }],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -165,7 +165,7 @@ function buildOpenApi() {
 export async function registerDocs(app: App) {
   const docsUser = app.config.DOCS_USERNAME;
   const docsPass = app.config.DOCS_PASSWORD;
-  const openapi = buildOpenApi();
+  const openapi = buildOpenApi(app.config.PORT);
 
   const guard = async (request: FastifyRequest, reply: FastifyReply) => {
     const result = verifyBasicAuth(request, reply, docsUser, docsPass);

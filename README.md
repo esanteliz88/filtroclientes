@@ -8,6 +8,7 @@ Base robusta para API con autenticacion tipo `client_credentials`, permisos por 
 
 ## Configuracion
 1. Copia `.env.example` a `.env` y ajusta valores.
+   - Puerto por defecto: `8080`.
 2. Asegura `JWT_SECRET` con al menos 32 caracteres.
 3. Configura credenciales de documentacion privada (`DOCS_USERNAME`, `DOCS_PASSWORD`).
 4. Redis opcional:

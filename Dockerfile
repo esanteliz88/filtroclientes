@@ -13,6 +13,6 @@ RUN npm run build
 COPY docker/start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 
-EXPOSE 3000
+EXPOSE 8080
 
 CMD ["/usr/local/bin/start.sh"]

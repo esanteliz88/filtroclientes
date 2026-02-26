@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().default(3000),
+  PORT: z.coerce.number().default(8080),
   LOG_LEVEL: z.string().default('info'),
   MONGO_URI: z.string().min(1),
   ENABLE_REDIS: z.coerce.boolean().default(true),
