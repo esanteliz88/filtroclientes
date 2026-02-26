@@ -12,6 +12,15 @@ import { IntakeSubmission } from '../models/IntakeSubmission.js';
 const PermissionSchema = z.object({ method: z.string(), path: z.string() });
 const RoleSchema = z.enum(['super_admin', 'company_admin', 'company_user']);
 const StatusSchema = z.enum(['active', 'disabled']);
+const StrongPasswordSchema = z
+  .string()
+  .min(12, 'Password must be at least 12 characters')
+  .max(128, 'Password is too long')
+  .regex(/[a-z]/, 'Password must include a lowercase letter')
+  .regex(/[A-Z]/, 'Password must include an uppercase letter')
+  .regex(/[0-9]/, 'Password must include a number')
+  .regex(/[^A-Za-z0-9]/, 'Password must include a symbol')
+  .regex(/^\S+$/, 'Password cannot contain spaces');
 
 const IdParam = z.object({
   id: z.string().min(1)
@@ -50,7 +59,7 @@ const CreateUserBody = z
   .object({
     email: z.string().email(),
     fullName: z.string().min(2),
-    password: z.string().min(8).optional(),
+    password: StrongPasswordSchema.optional(),
     role: RoleSchema,
     companyCode: z.string().min(1).optional().nullable(),
     externalUserId: z.coerce.number().int().optional().nullable(),
@@ -69,7 +78,7 @@ const CreateUserBody = z
 const UpdateUserBody = z
   .object({
     fullName: z.string().min(2).optional(),
-    password: z.string().min(8).optional(),
+    password: StrongPasswordSchema.optional(),
     role: RoleSchema.optional(),
     companyCode: z.string().min(1).optional().nullable(),
     externalUserId: z.coerce.number().int().optional().nullable(),
