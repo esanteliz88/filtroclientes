@@ -22,6 +22,7 @@ declare module '@fastify/jwt' {
       companyCode?: string | null;
       userId?: string;
       externalUserId?: number | null;
+      companyCodes?: string[];
     };
     user: {
       sub: string;
@@ -33,6 +34,7 @@ declare module '@fastify/jwt' {
       companyCode?: string | null;
       userId?: string;
       externalUserId?: number | null;
+      companyCodes?: string[];
     };
   }
 }

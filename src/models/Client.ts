@@ -12,6 +12,7 @@ const ClientSchema = new mongoose.Schema(
   {
     clientId: { type: String, required: true, unique: true, index: true },
     secretHash: { type: String, required: true },
+    companyCodes: { type: [String], default: [], index: true },
     scopes: { type: [String], default: [] },
     permissions: { type: [PermissionSchema], default: [] },
     isAdmin: { type: Boolean, default: false },

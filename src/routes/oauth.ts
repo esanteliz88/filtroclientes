@@ -52,7 +52,8 @@ export async function oauthRoutes(app: App) {
         scopes: allowedScopes,
         perms: client.permissions || [],
         isAdmin: !!client.isAdmin,
-        actorType: 'client'
+        actorType: 'client',
+        companyCodes: (client.companyCodes || []).map(c => String(c).toLowerCase())
       },
       { expiresIn: app.config.TOKEN_TTL_SECONDS }
     );

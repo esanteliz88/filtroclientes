@@ -19,6 +19,7 @@ const IdParam = z.object({
 const CreateClientBody = z.object({
   clientId: z.string().min(4),
   clientSecret: z.string().min(8).optional(),
+  companyCodes: z.array(z.string()).default([]),
   scopes: z.array(z.string()).default([]),
   permissions: z.array(PermissionSchema).default([]),
   isAdmin: z.boolean().default(false)
@@ -27,6 +28,7 @@ const CreateClientBody = z.object({
 const UpdateClientBody = z
   .object({
     clientSecret: z.string().min(8).optional(),
+    companyCodes: z.array(z.string()).optional(),
     scopes: z.array(z.string()).optional(),
     permissions: z.array(PermissionSchema).optional(),
     isAdmin: z.boolean().optional(),
@@ -35,6 +37,7 @@ const UpdateClientBody = z
   .refine(
     data =>
       data.clientSecret !== undefined ||
+      data.companyCodes !== undefined ||
       data.scopes !== undefined ||
       data.permissions !== undefined ||
       data.isAdmin !== undefined ||
@@ -111,6 +114,7 @@ function exposeClient(client: Record<string, unknown>) {
   return {
     id: String(client._id ?? ''),
     clientId: client.clientId,
+    companyCodes: client.companyCodes,
     scopes: client.scopes,
     permissions: client.permissions,
     isAdmin: client.isAdmin,
@@ -148,7 +152,7 @@ export async function adminRoutes(app: App) {
     const parsed = CreateClientBody.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
-    const { clientId, clientSecret, scopes, permissions, isAdmin } = parsed.data;
+    const { clientId, clientSecret, companyCodes, scopes, permissions, isAdmin } = parsed.data;
     const existing = await Client.findOne({ clientId }).lean();
     if (existing) return reply.code(409).send({ error: 'client_exists' });
 
@@ -158,6 +162,7 @@ export async function adminRoutes(app: App) {
     const created = await Client.create({
       clientId,
       secretHash,
+      companyCodes: companyCodes.map(c => c.toLowerCase()),
       scopes,
       permissions,
       isAdmin
@@ -199,6 +204,7 @@ export async function adminRoutes(app: App) {
 
     const updates = parsedBody.data;
     if (updates.clientSecret !== undefined) current.secretHash = await bcrypt.hash(updates.clientSecret, 12);
+    if (updates.companyCodes !== undefined) current.set('companyCodes', updates.companyCodes.map(c => c.toLowerCase()));
     if (updates.scopes !== undefined) current.set('scopes', updates.scopes);
     if (updates.permissions !== undefined) current.set('permissions', updates.permissions);
     if (updates.isAdmin !== undefined) current.set('isAdmin', updates.isAdmin);

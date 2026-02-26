@@ -41,7 +41,8 @@ export async function registerPermissions(app: App) {
     }
 
     if (config.permissions) {
-      const ok = isAllowedByPermissions(user.perms, request.method, request.url);
+      const targetPath = (request.routeOptions.url || request.url).split('?')[0];
+      const ok = isAllowedByPermissions(user.perms, request.method, targetPath);
       if (!ok) return reply.code(403).send({ error: 'not_allowed' });
     }
   });
