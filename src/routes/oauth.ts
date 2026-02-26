@@ -26,6 +26,17 @@ export async function oauthRoutes(app: App) {
     if (!ok) return reply.code(401).send({ error: 'invalid_client' });
 
     const requestedScopes = scope ? scope.split(' ').filter(Boolean) : client.scopes;
+
+    if (scope) {
+      const invalidRequestedScopes = requestedScopes.filter(s => !client.scopes.includes(s));
+      if (invalidRequestedScopes.length > 0) {
+        return reply.code(400).send({
+          error: 'invalid_scope',
+          invalid_scopes: invalidRequestedScopes
+        });
+      }
+    }
+
     const allowedScopes = requestedScopes.filter(s => client.scopes.includes(s));
 
     const token = await reply.jwtSign(
