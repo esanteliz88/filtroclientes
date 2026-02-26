@@ -11,7 +11,7 @@ Base robusta para API con autenticacion tipo `client_credentials`, permisos por 
 2. Asegura `JWT_SECRET` con al menos 32 caracteres.
 3. Configura credenciales de documentacion privada (`DOCS_USERNAME`, `DOCS_PASSWORD`).
 4. Redis opcional:
-   - `ENABLE_REDIS=true`: requiere `REDIS_URL`.
+   - `ENABLE_REDIS=true`: usa `REDIS_URL` (por defecto `redis://127.0.0.1:6379`).
    - `ENABLE_REDIS=false`: la API corre sin Redis.
 
 ## Desarrollo local
@@ -24,6 +24,8 @@ npm run dev
 ```bash
 docker compose up --build
 ```
+
+El `Dockerfile` principal inicia Redis interno para despliegues de contenedor unico.
 
 ## Bootstrap de admin (sin secreto en .env)
 El admin se crea una sola vez directamente en MongoDB y el secreto se muestra solo en consola:
