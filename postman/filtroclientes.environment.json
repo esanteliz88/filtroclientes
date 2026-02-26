@@ -33,6 +33,12 @@
       "enabled": true
     },
     {
+      "key": "company_code",
+      "value": "saga",
+      "type": "default",
+      "enabled": true
+    },
+    {
       "key": "client_secret",
       "value": "",
       "type": "secret",

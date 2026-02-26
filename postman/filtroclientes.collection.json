@@ -76,7 +76,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"clientId\": \"{{client_id}}\",\n  \"clientSecret\": \"{{client_secret}}\",\n  \"companyCodes\": [\"saga\"],\n  \"scopes\": [\"write\", \"read\"],\n  \"permissions\": [\n    { \"method\": \"POST\", \"path\": \"^/webhooks/filtroclientes$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/submissions$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/data$\" }\n  ],\n  \"isAdmin\": false\n}"
+          "raw": "{\n  \"clientId\": \"{{client_id}}\",\n  \"clientSecret\": \"{{client_secret}}\",\n  \"companyCodes\": [\"{{company_code}}\"],\n  \"scopes\": [\"write\", \"read\"],\n  \"permissions\": [\n    { \"method\": \"POST\", \"path\": \"^/webhooks/filtroclientes$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/submissions$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/metrics$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/data$\" }\n  ],\n  \"isAdmin\": false\n}"
         },
         "url": {
           "raw": "{{base_url}}/admin/clients",
@@ -86,6 +86,58 @@
           "path": [
             "admin",
             "clients"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin - Create Company",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Saga Salud\",\n  \"code\": \"{{company_code}}\",\n  \"status\": \"active\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/admin/companies",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "admin",
+            "companies"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin - List Companies",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/companies",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "admin",
+            "companies"
           ]
         }
       }
@@ -128,7 +180,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"companyCodes\": [\"saga\"],\n  \"scopes\": [\"write\", \"read\"],\n  \"permissions\": [\n    { \"method\": \"POST\", \"path\": \"^/webhooks/filtroclientes$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/submissions$\" }\n  ]\n}"
+          "raw": "{\n  \"companyCodes\": [\"{{company_code}}\"],\n  \"scopes\": [\"write\", \"read\"],\n  \"permissions\": [\n    { \"method\": \"POST\", \"path\": \"^/webhooks/filtroclientes$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/submissions$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/metrics$\" }\n  ]\n}"
         },
         "url": {
           "raw": "{{base_url}}/admin/clients/{{client_lookup_id}}",
@@ -238,6 +290,34 @@
             {
               "key": "onlyWithMatch",
               "value": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "API - Metrics (client scoped)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{client_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/metrics?days=30",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "metrics"
+          ],
+          "query": [
+            {
+              "key": "days",
+              "value": "30"
             }
           ]
         }
