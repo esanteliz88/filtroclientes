@@ -57,7 +57,7 @@ function buildOpenApi(port: number) {
           required: ['method', 'path'],
           properties: {
             method: { type: 'string', example: 'POST' },
-            path: { type: 'string', example: '^/webhooks/qillform$' }
+            path: { type: 'string', example: '^/webhooks/filtroclientes$' }
           }
         }
       }
@@ -111,7 +111,7 @@ function buildOpenApi(port: number) {
                   service: {
                     value: {
                       grant_type: 'client_credentials',
-                      client_id: 'qillform-client',
+                      client_id: 'filtroclientes-client',
                       client_secret: '<service-secret>',
                       scope: 'write'
                     }
@@ -198,11 +198,11 @@ function buildOpenApi(port: number) {
                   }
                 },
                 example: {
-                  clientId: 'qillform-client',
-                  clientSecret: 'qillformSecret123',
+                  clientId: 'filtroclientes-client',
+                  clientSecret: 'filtroclientesSecret123',
                   scopes: ['write', 'read'],
                   permissions: [
-                    { method: 'POST', path: '^/webhooks/qillform$' },
+                    { method: 'POST', path: '^/webhooks/filtroclientes$' },
                     { method: 'GET', path: '^/api/data$' }
                   ],
                   isAdmin: false
@@ -242,12 +242,12 @@ function buildOpenApi(port: number) {
           }
         }
       },
-      '/webhooks/qillform': {
+      '/webhooks/filtroclientes': {
         post: {
           tags: ['Webhooks'],
           summary: 'Ingesta QillForms (normaliza y guarda)',
           description:
-            'Requiere token Bearer, scope `write` y permiso `POST ^/webhooks/qillform$`. Acepta `subtipo_*` dinamico y normaliza campos.',
+            'Requiere token Bearer, scope `write` y permiso `POST ^/webhooks/filtroclientes$`. Acepta `subtipo_*` dinamico y normaliza campos.',
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,

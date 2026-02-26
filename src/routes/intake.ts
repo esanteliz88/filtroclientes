@@ -8,7 +8,7 @@ const IntakeBodySchema = z.record(z.any());
 
 export async function intakeRoutes(app: App) {
   app.post(
-    '/qillform',
+    '/filtroclientes',
     {
       config: { auth: true, scopes: ['write'], permissions: true }
     },
@@ -20,7 +20,7 @@ export async function intakeRoutes(app: App) {
       const normalized = normalizeIntakePayload(rawPayload);
 
       const saved = await IntakeSubmission.create({
-        source: 'qillform',
+        source: 'filtroclientes',
         rawPayload,
         normalized
       });
