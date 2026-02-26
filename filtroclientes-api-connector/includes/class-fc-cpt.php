@@ -17,7 +17,7 @@ final class FC_CPT
             ],
             'public' => false,
             'show_ui' => true,
-            'show_in_menu' => false,
+            'show_in_menu' => 'fc-dashboard',
             'supports' => ['title'],
             'capability_type' => 'post',
             'map_meta_cap' => true

@@ -20,7 +20,6 @@ final class FC_Admin
 
         add_submenu_page('fc-dashboard', 'Dashboard', 'Dashboard', 'manage_options', 'fc-dashboard', [self::class, 'render_dashboard_page']);
         add_submenu_page('fc-dashboard', 'Conexion API', 'Conexion API', 'manage_options', 'fc-settings', [self::class, 'render_settings_page']);
-        add_submenu_page('fc-dashboard', 'Registros', 'Registros', 'manage_options', 'edit.php?post_type=' . FC_CPT::POST_TYPE);
     }
 
     public static function enqueue_assets(string $hook): void
