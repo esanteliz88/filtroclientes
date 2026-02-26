@@ -1,14 +1,19 @@
 import type { App } from '../app.js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { Client } from '../models/Client.js';
+import { Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { Client } from '../models/Client.js';
+import { AppUser } from '../models/AppUser.js';
+import { IntakeSubmission } from '../models/IntakeSubmission.js';
 
 const PermissionSchema = z.object({ method: z.string(), path: z.string() });
+const RoleSchema = z.enum(['super_admin', 'company_admin', 'company_user']);
+const StatusSchema = z.enum(['active', 'disabled']);
 
-const ClientParams = z.object({
-  clientId: z.string().min(1)
+const IdParam = z.object({
+  id: z.string().min(1)
 });
 
 const CreateClientBody = z.object({
@@ -25,7 +30,7 @@ const UpdateClientBody = z
     scopes: z.array(z.string()).optional(),
     permissions: z.array(PermissionSchema).optional(),
     isAdmin: z.boolean().optional(),
-    status: z.enum(['active', 'disabled']).optional()
+    status: StatusSchema.optional()
   })
   .refine(
     data =>
@@ -37,8 +42,74 @@ const UpdateClientBody = z
     { message: 'At least one field is required' }
   );
 
+const CreateUserBody = z
+  .object({
+    email: z.string().email(),
+    fullName: z.string().min(2),
+    password: z.string().min(8).optional(),
+    role: RoleSchema,
+    companyCode: z.string().min(1).optional().nullable(),
+    externalUserId: z.coerce.number().int().optional().nullable(),
+    status: StatusSchema.default('active')
+  })
+  .superRefine((data, ctx) => {
+    if (data.role !== 'super_admin' && !data.companyCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['companyCode'],
+        message: 'companyCode is required for company_admin and company_user'
+      });
+    }
+  });
+
+const UpdateUserBody = z
+  .object({
+    fullName: z.string().min(2).optional(),
+    password: z.string().min(8).optional(),
+    role: RoleSchema.optional(),
+    companyCode: z.string().min(1).optional().nullable(),
+    externalUserId: z.coerce.number().int().optional().nullable(),
+    status: StatusSchema.optional()
+  })
+  .refine(
+    data =>
+      data.fullName !== undefined ||
+      data.password !== undefined ||
+      data.role !== undefined ||
+      data.companyCode !== undefined ||
+      data.externalUserId !== undefined ||
+      data.status !== undefined,
+    { message: 'At least one field is required' }
+  );
+
+const SubmissionQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  skip: z.coerce.number().int().min(0).default(0),
+  companyCode: z.string().optional(),
+  externalUserId: z.coerce.number().int().optional(),
+  onlyWithMatch: z
+    .union([z.literal('true'), z.literal('false')])
+    .optional()
+    .transform(v => (v === undefined ? undefined : v === 'true'))
+});
+
+function isObjectId(value: string) {
+  return Types.ObjectId.isValid(value);
+}
+
+function findClientByIdOrClientId(id: string) {
+  if (isObjectId(id)) return Client.findById(id);
+  return Client.findOne({ clientId: id });
+}
+
+function deleteClientByIdOrClientId(id: string) {
+  if (isObjectId(id)) return Client.deleteOne({ _id: id });
+  return Client.deleteOne({ clientId: id });
+}
+
 function exposeClient(client: Record<string, unknown>) {
   return {
+    id: String(client._id ?? ''),
     clientId: client.clientId,
     scopes: client.scopes,
     permissions: client.permissions,
@@ -46,6 +117,20 @@ function exposeClient(client: Record<string, unknown>) {
     status: client.status,
     createdAt: client.createdAt,
     updatedAt: client.updatedAt
+  };
+}
+
+function exposeUser(user: Record<string, unknown>) {
+  return {
+    id: String(user._id ?? ''),
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    companyCode: user.companyCode,
+    externalUserId: user.externalUserId,
+    status: user.status,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
   };
 }
 
@@ -59,109 +144,197 @@ export async function adminRoutes(app: App) {
     }
   });
 
-  app.post(
-    '/clients',
-    { config: { auth: true } },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = CreateClientBody.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
+  app.post('/clients', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = CreateClientBody.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      const { clientId, clientSecret, scopes, permissions, isAdmin } = parsed.data;
-      const existing = await Client.findOne({ clientId }).lean();
-      if (existing) return reply.code(409).send({ error: 'client_exists' });
+    const { clientId, clientSecret, scopes, permissions, isAdmin } = parsed.data;
+    const existing = await Client.findOne({ clientId }).lean();
+    if (existing) return reply.code(409).send({ error: 'client_exists' });
 
-      const rawSecret = clientSecret ?? crypto.randomBytes(24).toString('hex');
-      const secretHash = await bcrypt.hash(rawSecret, 12);
+    const rawSecret = clientSecret ?? crypto.randomBytes(24).toString('hex');
+    const secretHash = await bcrypt.hash(rawSecret, 12);
 
-      await Client.create({
-        clientId,
-        secretHash,
-        scopes,
-        permissions,
-        isAdmin
-      });
+    const created = await Client.create({
+      clientId,
+      secretHash,
+      scopes,
+      permissions,
+      isAdmin
+    });
 
-      return reply.code(201).send({
-        clientId,
-        clientSecret: rawSecret,
-        scopes,
-        permissions,
-        isAdmin,
-        status: 'active'
-      });
-    }
-  );
+    return reply.code(201).send({
+      client: exposeClient(created.toObject() as Record<string, unknown>),
+      clientSecret: rawSecret
+    });
+  });
 
   app.get('/clients', { config: { auth: true } }, async () => {
     const clients = await Client.find(
       {},
       { clientId: 1, scopes: 1, permissions: 1, isAdmin: 1, status: 1, createdAt: 1, updatedAt: 1 }
     ).lean();
-
-    return { clients };
+    return { clients: clients.map(c => exposeClient(c as unknown as Record<string, unknown>)) };
   });
 
-  app.get(
-    '/clients/:clientId',
-    { config: { auth: true } },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsedParams = ClientParams.safeParse(request.params);
-      if (!parsedParams.success) return reply.code(400).send({ error: 'invalid_request' });
+  app.get('/clients/:id', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    if (!parsedParams.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      const client = await Client.findOne({ clientId: parsedParams.data.clientId }).lean();
-      if (!client) return reply.code(404).send({ error: 'client_not_found' });
+    const client = await findClientByIdOrClientId(parsedParams.data.id);
+    if (!client) return reply.code(404).send({ error: 'client_not_found' });
 
-      return { client: exposeClient(client as unknown as Record<string, unknown>) };
+    return { client: exposeClient(client.toObject() as Record<string, unknown>) };
+  });
+
+  app.patch('/clients/:id', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    const parsedBody = UpdateClientBody.safeParse(request.body);
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.code(400).send({ error: 'invalid_request' });
     }
-  );
 
-  app.patch(
-    '/clients/:clientId',
-    { config: { auth: true } },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsedParams = ClientParams.safeParse(request.params);
-      const parsedBody = UpdateClientBody.safeParse(request.body);
+    const current = await findClientByIdOrClientId(parsedParams.data.id);
+    if (!current) return reply.code(404).send({ error: 'client_not_found' });
 
-      if (!parsedParams.success || !parsedBody.success) {
-        return reply.code(400).send({ error: 'invalid_request' });
-      }
+    const updates = parsedBody.data;
+    if (updates.clientSecret !== undefined) current.secretHash = await bcrypt.hash(updates.clientSecret, 12);
+    if (updates.scopes !== undefined) current.set('scopes', updates.scopes);
+    if (updates.permissions !== undefined) current.set('permissions', updates.permissions);
+    if (updates.isAdmin !== undefined) current.set('isAdmin', updates.isAdmin);
+    if (updates.status !== undefined) current.set('status', updates.status);
 
-      const { clientId } = parsedParams.data;
-      const updates = parsedBody.data;
+    await current.save();
+    return {
+      client: exposeClient(current.toObject() as Record<string, unknown>),
+      secretUpdated: updates.clientSecret !== undefined
+    };
+  });
 
-      const current = await Client.findOne({ clientId });
-      if (!current) return reply.code(404).send({ error: 'client_not_found' });
+  app.delete('/clients/:id', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    if (!parsedParams.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      if (updates.clientSecret !== undefined) {
-        current.secretHash = await bcrypt.hash(updates.clientSecret, 12);
-      }
-      if (updates.scopes !== undefined) current.set('scopes', updates.scopes);
-      if (updates.permissions !== undefined) current.set('permissions', updates.permissions);
-      if (updates.isAdmin !== undefined) current.set('isAdmin', updates.isAdmin);
-      if (updates.status !== undefined) current.set('status', updates.status);
+    const result = await deleteClientByIdOrClientId(parsedParams.data.id);
+    if (result.deletedCount === 0) return reply.code(404).send({ error: 'client_not_found' });
+    return reply.code(204).send();
+  });
 
-      await current.save();
+  app.post('/users', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = CreateUserBody.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      return {
-        client: exposeClient(current.toObject() as Record<string, unknown>),
-        secretUpdated: updates.clientSecret !== undefined
-      };
+    const data = parsed.data;
+    const email = data.email.toLowerCase();
+    const exists = await AppUser.findOne({ email }).lean();
+    if (exists) return reply.code(409).send({ error: 'user_exists' });
+
+    const rawPassword = data.password ?? crypto.randomBytes(16).toString('hex');
+    const passwordHash = await bcrypt.hash(rawPassword, 12);
+
+    const created = await AppUser.create({
+      email,
+      fullName: data.fullName,
+      passwordHash,
+      role: data.role,
+      companyCode: data.role === 'super_admin' ? null : data.companyCode?.toLowerCase() ?? null,
+      externalUserId: data.externalUserId ?? null,
+      status: data.status
+    });
+
+    return reply.code(201).send({
+      user: exposeUser(created.toObject() as Record<string, unknown>),
+      password: rawPassword
+    });
+  });
+
+  app.get('/users', { config: { auth: true } }, async (request: FastifyRequest) => {
+    const query = request.query as { companyCode?: string; role?: string; status?: string };
+    const filter: Record<string, unknown> = {};
+    if (query.companyCode) filter.companyCode = query.companyCode.toLowerCase();
+    if (query.role) filter.role = query.role;
+    if (query.status) filter.status = query.status;
+
+    const users = await AppUser.find(filter).sort({ createdAt: -1 }).lean();
+    return { users: users.map(u => exposeUser(u as unknown as Record<string, unknown>)) };
+  });
+
+  app.get('/users/:id', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    if (!parsedParams.success || !isObjectId(parsedParams.data.id)) {
+      return reply.code(400).send({ error: 'invalid_request' });
     }
-  );
 
-  app.delete(
-    '/clients/:clientId',
-    { config: { auth: true } },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsedParams = ClientParams.safeParse(request.params);
-      if (!parsedParams.success) return reply.code(400).send({ error: 'invalid_request' });
+    const user = await AppUser.findById(parsedParams.data.id).lean();
+    if (!user) return reply.code(404).send({ error: 'user_not_found' });
 
-      const result = await Client.deleteOne({ clientId: parsedParams.data.clientId });
-      if (result.deletedCount === 0) {
-        return reply.code(404).send({ error: 'client_not_found' });
-      }
+    return { user: exposeUser(user as unknown as Record<string, unknown>) };
+  });
 
-      return reply.code(204).send();
+  app.patch('/users/:id', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    const parsedBody = UpdateUserBody.safeParse(request.body);
+    if (!parsedParams.success || !parsedBody.success || !isObjectId(parsedParams.data.id)) {
+      return reply.code(400).send({ error: 'invalid_request' });
     }
-  );
+
+    const user = await AppUser.findById(parsedParams.data.id);
+    if (!user) return reply.code(404).send({ error: 'user_not_found' });
+
+    const data = parsedBody.data;
+    if (data.fullName !== undefined) user.set('fullName', data.fullName);
+    if (data.password !== undefined) user.set('passwordHash', await bcrypt.hash(data.password, 12));
+    if (data.role !== undefined) user.set('role', data.role);
+    if (data.companyCode !== undefined) user.set('companyCode', data.companyCode ? data.companyCode.toLowerCase() : null);
+    if (data.externalUserId !== undefined) user.set('externalUserId', data.externalUserId ?? null);
+    if (data.status !== undefined) user.set('status', data.status);
+
+    if (user.get('role') !== 'super_admin' && !user.get('companyCode')) {
+      return reply.code(400).send({ error: 'companyCode_required_for_role' });
+    }
+
+    await user.save();
+
+    return {
+      user: exposeUser(user.toObject() as Record<string, unknown>),
+      passwordUpdated: data.password !== undefined
+    };
+  });
+
+  app.delete('/users/:id', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    if (!parsedParams.success || !isObjectId(parsedParams.data.id)) {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+
+    const result = await AppUser.deleteOne({ _id: parsedParams.data.id });
+    if (result.deletedCount === 0) return reply.code(404).send({ error: 'user_not_found' });
+    return reply.code(204).send();
+  });
+
+  app.get('/submissions', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = SubmissionQuery.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    const filter: Record<string, unknown> = {};
+    if (parsed.data.companyCode) filter.companyCodes = parsed.data.companyCode.toLowerCase();
+    if (parsed.data.externalUserId !== undefined) filter.sourceUserId = parsed.data.externalUserId;
+    if (parsed.data.onlyWithMatch === true) filter['match.total_matches'] = { $gt: 0 };
+    if (parsed.data.onlyWithMatch === false) filter['$or'] = [{ 'match.total_matches': 0 }, { match: null }];
+
+    const submissions = await IntakeSubmission.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(parsed.data.skip)
+      .limit(parsed.data.limit)
+      .lean();
+
+    const total = await IntakeSubmission.countDocuments(filter);
+
+    return {
+      total,
+      limit: parsed.data.limit,
+      skip: parsed.data.skip,
+      submissions
+    };
+  });
 }

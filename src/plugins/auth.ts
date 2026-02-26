@@ -17,12 +17,22 @@ declare module '@fastify/jwt' {
       scopes: string[];
       perms: { method: string; path: string }[];
       isAdmin: boolean;
+      actorType?: 'client' | 'user';
+      role?: 'super_admin' | 'company_admin' | 'company_user';
+      companyCode?: string | null;
+      userId?: string;
+      externalUserId?: number | null;
     };
     user: {
       sub: string;
       scopes: string[];
       perms: { method: string; path: string }[];
       isAdmin: boolean;
+      actorType?: 'client' | 'user';
+      role?: 'super_admin' | 'company_admin' | 'company_user';
+      companyCode?: string | null;
+      userId?: string;
+      externalUserId?: number | null;
     };
   }
 }

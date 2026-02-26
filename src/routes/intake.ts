@@ -23,6 +23,8 @@ export async function intakeRoutes(app: App) {
 
       const saved = await IntakeSubmission.create({
         source: 'filtroclientes',
+        sourceUserId: normalized.user_id,
+        companyCodes: normalized.centro,
         rawPayload,
         normalized,
         match
