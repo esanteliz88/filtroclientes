@@ -1,6 +1,6 @@
-﻿# Filtro API Base
+# Filtro API Base
 
-Base robusta para API con autenticacion tipo `client_credentials`, permisos por scope y por endpoint, MongoDB, Redis cache, rate-limit y protecciones basicas de memoria.
+Base robusta para API con autenticacion tipo `client_credentials`, permisos por scope y por endpoint, MongoDB, Redis cache opcional, rate-limit y protecciones basicas de memoria.
 
 ## Requisitos
 - Node.js 20+
@@ -10,28 +10,31 @@ Base robusta para API con autenticacion tipo `client_credentials`, permisos por 
 1. Copia `.env.example` a `.env` y ajusta valores.
 2. Asegura `JWT_SECRET` con al menos 32 caracteres.
 3. Configura credenciales de documentacion privada (`DOCS_USERNAME`, `DOCS_PASSWORD`).
+4. Redis opcional:
+   - `ENABLE_REDIS=true`: requiere `REDIS_URL`.
+   - `ENABLE_REDIS=false`: la API corre sin Redis.
 
 ## Desarrollo local
-```
+```bash
 npm install
 npm run dev
 ```
 
 ## Docker
-```
+```bash
 docker compose up --build
 ```
 
 ## Bootstrap de admin (sin secreto en .env)
 El admin se crea una sola vez directamente en MongoDB y el secreto se muestra solo en consola:
 
-```
+```bash
 npm run bootstrap:admin
 ```
 
 Opcionalmente puedes definirlos manualmente:
 
-```
+```bash
 npm run bootstrap:admin -- --client-id admin --secret "un-secreto-largo"
 ```
 
@@ -41,7 +44,7 @@ npm run bootstrap:admin -- --client-id admin --secret "un-secreto-largo"
 
 ## Flujo OAuth2 (client_credentials)
 - Token:
-```
+```http
 POST /oauth/token
 {
   "grant_type": "client_credentials",
@@ -63,7 +66,7 @@ POST /oauth/token
 - `permissions`: lista de `{ method, path }` usando regex para controlar endpoints especificos.
 
 Ejemplo de permisos:
-```
+```json
 [
   { "method": "GET", "path": "/api/data" },
   { "method": "POST", "path": "/api/.*" }
@@ -72,6 +75,6 @@ Ejemplo de permisos:
 
 ## Notas
 - El admin ya no se crea con secretos en `.env`; usa `npm run bootstrap:admin`.
-- Cache de ejemplo en `GET /api/data` con Redis (TTL 30s).
+- Cache de ejemplo en `GET /api/data` con Redis (TTL 30s) cuando Redis esta habilitado.
 - Rate limit global: 200 req/min.
-- Protección de memoria con `under-pressure`.
+- Proteccion de memoria con `under-pressure`.

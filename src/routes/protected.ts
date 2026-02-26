@@ -9,8 +9,12 @@ export async function protectedRoutes(app: App) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const cacheKey = `data:${request.user.sub}`;
-      const cached = await app.redis.get(cacheKey);
-      if (cached) return reply.send(JSON.parse(cached));
+      const redis = app.hasDecorator('redis') ? app.redis : null;
+
+      if (redis) {
+        const cached = await redis.get(cacheKey);
+        if (cached) return reply.send(JSON.parse(cached));
+      }
 
       const payload = {
         message: 'secure read data',
@@ -18,7 +22,10 @@ export async function protectedRoutes(app: App) {
         client: request.user.sub
       };
 
-      await app.redis.set(cacheKey, JSON.stringify(payload), 'EX', 30);
+      if (redis) {
+        await redis.set(cacheKey, JSON.stringify(payload), 'EX', 30);
+      }
+
       return payload;
     }
   );

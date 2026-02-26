@@ -1,7 +1,12 @@
-﻿import type { App } from '../app.js';
+import type { App } from '../app.js';
 import redisPlugin from '@fastify/redis';
 
 export async function registerRedis(app: App) {
-  await app.register(redisPlugin, { url: app.config.REDIS_URL });
+  if (!app.config.ENABLE_REDIS) {
+    app.log.info('Redis disabled (ENABLE_REDIS=false)');
+    return;
+  }
+
+  await app.register(redisPlugin, { url: app.config.REDIS_URL! });
   app.log.info('Redis connected');
 }

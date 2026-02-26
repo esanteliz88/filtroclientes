@@ -1,16 +1,27 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 
-const EnvSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().default(3000),
-  LOG_LEVEL: z.string().default('info'),
-  MONGO_URI: z.string().min(1),
-  REDIS_URL: z.string().min(1),
-  JWT_SECRET: z.string().min(32),
-  TOKEN_TTL_SECONDS: z.coerce.number().default(3600),
-  DOCS_USERNAME: z.string().min(4),
-  DOCS_PASSWORD: z.string().min(8)
-});
+const EnvSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    PORT: z.coerce.number().default(3000),
+    LOG_LEVEL: z.string().default('info'),
+    MONGO_URI: z.string().min(1),
+    ENABLE_REDIS: z.coerce.boolean().default(true),
+    REDIS_URL: z.string().optional(),
+    JWT_SECRET: z.string().min(32),
+    TOKEN_TTL_SECONDS: z.coerce.number().default(3600),
+    DOCS_USERNAME: z.string().min(4),
+    DOCS_PASSWORD: z.string().min(8)
+  })
+  .superRefine((env, ctx) => {
+    if (env.ENABLE_REDIS && (!env.REDIS_URL || env.REDIS_URL.trim().length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['REDIS_URL'],
+        message: 'REDIS_URL is required when ENABLE_REDIS=true'
+      });
+    }
+  });
 
 export type Env = z.infer<typeof EnvSchema>;
 
