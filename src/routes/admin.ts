@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { Client } from '../models/Client.js';
+import { Company } from '../models/Company.js';
 import { AppUser } from '../models/AppUser.js';
 import { IntakeSubmission } from '../models/IntakeSubmission.js';
 
@@ -96,6 +97,22 @@ const SubmissionQuery = z.object({
     .transform(v => (v === undefined ? undefined : v === 'true'))
 });
 
+const CreateCompanyBody = z.object({
+  name: z.string().min(2),
+  code: z.string().min(2).optional(),
+  status: StatusSchema.default('active')
+});
+
+const UpdateCompanyBody = z
+  .object({
+    name: z.string().min(2).optional(),
+    code: z.string().min(2).optional(),
+    status: StatusSchema.optional()
+  })
+  .refine(data => data.name !== undefined || data.code !== undefined || data.status !== undefined, {
+    message: 'At least one field is required'
+  });
+
 function isObjectId(value: string) {
   return Types.ObjectId.isValid(value);
 }
@@ -138,6 +155,41 @@ function exposeUser(user: Record<string, unknown>) {
   };
 }
 
+function normalizeCompanyCode(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .trim();
+}
+
+async function generateUniqueCompanyCode(nameOrCode: string) {
+  const base = normalizeCompanyCode(nameOrCode) || 'company';
+  let code = base;
+  let i = 1;
+
+  while (await Company.exists({ code })) {
+    code = `${base}-${i}`;
+    i += 1;
+  }
+
+  return code;
+}
+
+async function validateCompanyCodesExist(companyCodes: string[]) {
+  const normalized = companyCodes.map(c => c.toLowerCase());
+  if (normalized.length === 0) return { ok: true as const, normalized };
+
+  const found = await Company.find({ code: { $in: normalized }, status: 'active' }, { code: 1 }).lean();
+  const foundSet = new Set(found.map(f => String(f.code)));
+  const missing = normalized.filter(c => !foundSet.has(c));
+  if (missing.length > 0) return { ok: false as const, missing };
+
+  return { ok: true as const, normalized };
+}
+
 export async function adminRoutes(app: App) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     const config = request.routeOptions.config as { auth?: boolean } | undefined;
@@ -153,6 +205,10 @@ export async function adminRoutes(app: App) {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
     const { clientId, clientSecret, companyCodes, scopes, permissions, isAdmin } = parsed.data;
+    const companyValidation = await validateCompanyCodesExist(companyCodes);
+    if (!companyValidation.ok) {
+      return reply.code(400).send({ error: 'invalid_company_codes', missing: companyValidation.missing });
+    }
     const existing = await Client.findOne({ clientId }).lean();
     if (existing) return reply.code(409).send({ error: 'client_exists' });
 
@@ -162,7 +218,7 @@ export async function adminRoutes(app: App) {
     const created = await Client.create({
       clientId,
       secretHash,
-      companyCodes: companyCodes.map(c => c.toLowerCase()),
+      companyCodes: companyValidation.normalized,
       scopes,
       permissions,
       isAdmin
@@ -204,7 +260,13 @@ export async function adminRoutes(app: App) {
 
     const updates = parsedBody.data;
     if (updates.clientSecret !== undefined) current.secretHash = await bcrypt.hash(updates.clientSecret, 12);
-    if (updates.companyCodes !== undefined) current.set('companyCodes', updates.companyCodes.map(c => c.toLowerCase()));
+    if (updates.companyCodes !== undefined) {
+      const companyValidation = await validateCompanyCodesExist(updates.companyCodes);
+      if (!companyValidation.ok) {
+        return reply.code(400).send({ error: 'invalid_company_codes', missing: companyValidation.missing });
+      }
+      current.set('companyCodes', companyValidation.normalized);
+    }
     if (updates.scopes !== undefined) current.set('scopes', updates.scopes);
     if (updates.permissions !== undefined) current.set('permissions', updates.permissions);
     if (updates.isAdmin !== undefined) current.set('isAdmin', updates.isAdmin);
@@ -231,6 +293,12 @@ export async function adminRoutes(app: App) {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
     const data = parsed.data;
+    if (data.role !== 'super_admin') {
+      const companyValidation = await validateCompanyCodesExist([String(data.companyCode)]);
+      if (!companyValidation.ok) {
+        return reply.code(400).send({ error: 'invalid_company_code', missing: companyValidation.missing });
+      }
+    }
     const email = data.email.toLowerCase();
     const exists = await AppUser.findOne({ email }).lean();
     if (exists) return reply.code(409).send({ error: 'user_exists' });
@@ -291,7 +359,17 @@ export async function adminRoutes(app: App) {
     if (data.fullName !== undefined) user.set('fullName', data.fullName);
     if (data.password !== undefined) user.set('passwordHash', await bcrypt.hash(data.password, 12));
     if (data.role !== undefined) user.set('role', data.role);
-    if (data.companyCode !== undefined) user.set('companyCode', data.companyCode ? data.companyCode.toLowerCase() : null);
+    if (data.companyCode !== undefined) {
+      if (data.companyCode) {
+        const companyValidation = await validateCompanyCodesExist([data.companyCode]);
+        if (!companyValidation.ok) {
+          return reply.code(400).send({ error: 'invalid_company_code', missing: companyValidation.missing });
+        }
+        user.set('companyCode', companyValidation.normalized[0]);
+      } else {
+        user.set('companyCode', null);
+      }
+    }
     if (data.externalUserId !== undefined) user.set('externalUserId', data.externalUserId ?? null);
     if (data.status !== undefined) user.set('status', data.status);
 
@@ -342,5 +420,53 @@ export async function adminRoutes(app: App) {
       skip: parsed.data.skip,
       submissions
     };
+  });
+
+  app.post('/companies', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = CreateCompanyBody.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    const name = parsed.data.name.trim();
+    const code = await generateUniqueCompanyCode(parsed.data.code ?? name);
+
+    const existsByName = await Company.findOne({ name }).lean();
+    if (existsByName) return reply.code(409).send({ error: 'company_name_exists' });
+
+    const created = await Company.create({
+      name,
+      code,
+      status: parsed.data.status
+    });
+
+    return reply.code(201).send({ company: created });
+  });
+
+  app.get('/companies', { config: { auth: true } }, async () => {
+    const companies = await Company.find({}).sort({ name: 1 }).lean();
+    return { companies };
+  });
+
+  app.patch('/companies/:id', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    const parsedBody = UpdateCompanyBody.safeParse(request.body);
+    if (!parsedParams.success || !parsedBody.success || !isObjectId(parsedParams.data.id)) {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+
+    const company = await Company.findById(parsedParams.data.id);
+    if (!company) return reply.code(404).send({ error: 'company_not_found' });
+
+    if (parsedBody.data.name !== undefined) company.set('name', parsedBody.data.name.trim());
+    if (parsedBody.data.code !== undefined) {
+      const normalized = normalizeCompanyCode(parsedBody.data.code);
+      if (!normalized) return reply.code(400).send({ error: 'invalid_company_code' });
+      const exists = await Company.findOne({ code: normalized, _id: { $ne: company._id } }).lean();
+      if (exists) return reply.code(409).send({ error: 'company_code_exists' });
+      company.set('code', normalized);
+    }
+    if (parsedBody.data.status !== undefined) company.set('status', parsedBody.data.status);
+
+    await company.save();
+    return { company };
   });
 }
