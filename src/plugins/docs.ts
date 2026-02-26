@@ -247,7 +247,7 @@ function buildOpenApi(port: number) {
           tags: ['Webhooks'],
           summary: 'Ingesta QillForms (normaliza y guarda)',
           description:
-            'Requiere token Bearer, scope `write` y permiso `POST ^/webhooks/filtroclientes$`. Acepta `subtipo_*` dinamico y normaliza campos.',
+            'Requiere token Bearer, scope `write` y permiso `POST ^/webhooks/filtroclientes$`. Acepta `subtipo_*` dinamico, normaliza campos, calcula `ecog_score` y busca estudios en estado reclutando.',
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -310,6 +310,23 @@ function buildOpenApi(port: number) {
                         'No estoy seguro/a'
                       ],
                       centro: ['saga', 'bh', 'pfizer']
+                    },
+                    match: {
+                      ecog_score: 0.75,
+                      total_matches: 1,
+                      studies: [
+                        {
+                          id: '69a09c4866c4430db566cf88',
+                          protocolo: 'BNT-113',
+                          enfermedad: 'Cabeza y cuello',
+                          subtipo: 'cavidad oral',
+                          estado_protocolo: 'reclutando',
+                          cod_clinical_trials_protocolo: 'NCT04534205',
+                          url_clinical_trials_protocolo:
+                            'https://clinicaltrials.gov/ct2/show/NCT04534205',
+                          centros_protocolo: ['saga']
+                        }
+                      ]
                     }
                   }
                 }

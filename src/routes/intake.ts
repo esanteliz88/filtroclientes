@@ -3,6 +3,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { IntakeSubmission } from '../models/IntakeSubmission.js';
 import { normalizeIntakePayload } from '../utils/intake-normalizer.js';
+import { findMatchingStudies } from '../services/study-matcher.js';
 
 const IntakeBodySchema = z.record(z.any());
 
@@ -18,17 +19,20 @@ export async function intakeRoutes(app: App) {
 
       const rawPayload = parsed.data;
       const normalized = normalizeIntakePayload(rawPayload);
+      const match = await findMatchingStudies(normalized);
 
       const saved = await IntakeSubmission.create({
         source: 'filtroclientes',
         rawPayload,
-        normalized
+        normalized,
+        match
       });
 
       return reply.code(201).send({
         ok: true,
         id: saved._id,
-        normalized
+        normalized,
+        match
       });
     }
   );
