@@ -1,0 +1,370 @@
+{
+  "info": {
+    "_postman_id": "4a4a03cf-5a43-4d8d-9cfe-37cb4f30aa11",
+    "name": "FiltroClientes API",
+    "description": "Coleccion completa para OAuth client/user, admin CRUD, webhook y listados.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "OAuth - Client Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{admin_client_id}}\",\n  \"client_secret\": \"{{admin_client_secret}}\",\n  \"scope\": \"admin write read\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/oauth/token",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "oauth",
+            "token"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) { pm.environment.set('admin_access_token', json.access_token); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Create Client",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"clientId\": \"{{client_id}}\",\n  \"clientSecret\": \"{{client_secret}}\",\n  \"companyCodes\": [\"saga\"],\n  \"scopes\": [\"write\", \"read\"],\n  \"permissions\": [\n    { \"method\": \"POST\", \"path\": \"^/webhooks/filtroclientes$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/submissions$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/data$\" }\n  ],\n  \"isAdmin\": false\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/admin/clients",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "admin",
+            "clients"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin - List Clients",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/clients",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "admin",
+            "clients"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin - Update Client (by clientId or _id)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"companyCodes\": [\"saga\"],\n  \"scopes\": [\"write\", \"read\"],\n  \"permissions\": [\n    { \"method\": \"POST\", \"path\": \"^/webhooks/filtroclientes$\" },\n    { \"method\": \"GET\", \"path\": \"^/api/submissions$\" }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/admin/clients/{{client_lookup_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "admin",
+            "clients",
+            "{{client_lookup_id}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Webhook - FiltroClientes (Body client credentials)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"client_secret\": \"{{client_secret}}\",\n  \"derivador\": \"1\",\n  \"enfermedad\": \"cancer\",\n  \"tipo_enfermedad\": \"Pulmón\",\n  \"subtipo_pulmon\": \"Células NO pequeñas\",\n  \"sexo\": \"Masculino\",\n  \"region\": \"I. Tarapaca\",\n  \"ciudad\": \"Santiago\",\n  \"metastasis\": \"Si\",\n  \"cirugia\": \"Si\",\n  \"cirugia_fecha\": \"27/12/2023\",\n  \"cirugia_descripcion\": \"Esta es la descripción de la cirugía\",\n  \"tratamiento\": \"Si\",\n  \"tratamiento_tipo\": \"Quimioterapia,Radioterapia,Inmunoterapia,Terapia Hormonal,Terapia Dirigida,No estoy seguro/a\",\n  \"ecog_dolor\": \"No tengo dolor\",\n  \"ecog_descanso\": \"Solo en la noche\",\n  \"ecog_ayuda\": \"No necesito ayuda\",\n  \"contacto_nombre\": \"Andrés Prueba Reyes\",\n  \"contacto_email\": \"areyes@vitzana.com\",\n  \"contacto_telefono\": \"+56957600539\",\n  \"consentimiento\": \"Si\",\n  \"entry_id\": 25,\n  \"form_id\": \"11\",\n  \"entry_date\": \"2026-02-26 14:06:18\",\n  \"user_id\": \"69a093fbffd5d81cc661a5e4\",\n  \"user_ip\": \"2800:300:6a73:3900:b163:5db8:9922:f356\",\n  \"centro\": \"saga\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/webhooks/filtroclientes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "webhooks",
+            "filtroclientes"
+          ]
+        }
+      }
+    },
+    {
+      "name": "OAuth - Client Token (service client)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{client_id}}\",\n  \"client_secret\": \"{{client_secret}}\",\n  \"scope\": \"read write\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/oauth/token",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "oauth",
+            "token"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) { pm.environment.set('client_access_token', json.access_token); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API - List Submissions (client scoped)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{client_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/submissions?limit=50&skip=0&onlyWithMatch=true",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "submissions"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "50"
+            },
+            {
+              "key": "skip",
+              "value": "0"
+            },
+            {
+              "key": "onlyWithMatch",
+              "value": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin - Create App User",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"fullName\": \"Usuario Empresa Saga\",\n  \"password\": \"{{user_password}}\",\n  \"role\": \"company_user\",\n  \"companyCode\": \"saga\",\n  \"externalUserId\": null,\n  \"status\": \"active\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/admin/users",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "admin",
+            "users"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin - List Users",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/users",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "admin",
+            "users"
+          ]
+        }
+      }
+    },
+    {
+      "name": "OAuth - User Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"grant_type\": \"password\",\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/oauth/user-token",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "oauth",
+            "user-token"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) { pm.environment.set('user_access_token', json.access_token); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Portal - List Submissions (user scoped)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{user_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/portal/submissions?limit=50&skip=0",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "portal",
+            "submissions"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "50"
+            },
+            {
+              "key": "skip",
+              "value": "0"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "event": []
+}

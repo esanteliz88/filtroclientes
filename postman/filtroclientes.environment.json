@@ -1,0 +1,75 @@
+{
+  "id": "c1d4884e-c5dc-4fa4-91b9-4e37bb87eb1c",
+  "name": "FiltroClientes Environment",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "https://apiclientes.guiaysalud.com",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "admin_client_id",
+      "value": "admin",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "admin_client_secret",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "admin_access_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "client_id",
+      "value": "saga",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "client_secret",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "client_lookup_id",
+      "value": "saga",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "client_access_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "user_email",
+      "value": "saga.viewer@empresa.com",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "user_password",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "user_access_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2026-02-26T00:00:00.000Z",
+  "_postman_exported_using": "Codex GPT-5"
+}
