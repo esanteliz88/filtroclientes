@@ -1,0 +1,27 @@
+﻿services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://mongo:27017/filtro
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - mongo
+      - redis
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+volumes:
+  mongo_data:
