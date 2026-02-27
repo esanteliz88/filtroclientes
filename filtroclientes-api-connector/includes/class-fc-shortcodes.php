@@ -34,10 +34,7 @@ final class FC_Shortcodes
         foreach ($apiItems as $item) {
             $normalized = self::normalize_for_display(isset($item['normalized']) && is_array($item['normalized']) ? $item['normalized'] : []);
             $matchPayload = self::normalize_for_display(isset($item['match']) && is_array($item['match']) ? $item['match'] : []);
-            $externalId = isset($item['_id']) ? self::normalize_string((string) $item['_id']) : '';
-            if ($externalId === '') {
-                continue;
-            }
+            $externalId = self::extract_external_id($item);
 
             $matchTotal = isset($matchPayload['total_matches']) ? (int) $matchPayload['total_matches'] : 0;
             $row = [
@@ -130,10 +127,14 @@ final class FC_Shortcodes
                                     </span>
                                 </td>
                                 <td>
-                                    <a class="button button-small" href="<?php echo esc_url(add_query_arg([
-                                        'page' => 'fc-record',
-                                        'external_id' => (string) $row['external_id']
-                                    ], admin_url('admin.php'))); ?>">Abrir ficha</a>
+                                    <?php if ((string) $row['external_id'] !== '') : ?>
+                                        <a class="button button-small" href="<?php echo esc_url(add_query_arg([
+                                            'page' => 'fc-record',
+                                            'external_id' => (string) $row['external_id']
+                                        ], admin_url('admin.php'))); ?>">Abrir ficha</a>
+                                    <?php else : ?>
+                                        <span class="fc-muted">Sin ID</span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -309,5 +310,24 @@ final class FC_Shortcodes
         }
 
         return self::normalize_string((string) $value);
+    }
+
+    private static function extract_external_id(array $item): string
+    {
+        if (isset($item['_id'])) {
+            $raw = $item['_id'];
+            if (is_string($raw)) {
+                return self::normalize_string($raw);
+            }
+            if (is_array($raw) && isset($raw['$oid']) && is_string($raw['$oid'])) {
+                return self::normalize_string($raw['$oid']);
+            }
+        }
+
+        if (isset($item['id']) && is_string($item['id'])) {
+            return self::normalize_string($item['id']);
+        }
+
+        return '';
     }
 }
