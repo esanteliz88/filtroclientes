@@ -136,6 +136,21 @@ function matchDisease(study: StudyDoc, disease: string | null, diseaseType: stri
     return { matched: true, studyCandidates };
   }
 
+  const patientType = typeof diseaseType === 'string' ? diseaseType.trim() : '';
+  const nonGenericStudy = studyCandidates.filter(v => !GENERIC_DISEASE_TERMS.has(normalizeText(v)));
+
+  // Strict primary gate:
+  // if patient provides a specific type (e.g. "Cabeza y cuello"), it must match
+  // a specific disease candidate from the study.
+  if (patientType) {
+    if (nonGenericStudy.length === 0) {
+      return { matched: false, studyCandidates };
+    }
+    const matchedByType = nonGenericStudy.some(studyValue => textBiDirectionalMatch(patientType, studyValue));
+    return { matched: matchedByType, studyCandidates };
+  }
+
+  // Fallback when patient did not provide disease type.
   const nonGenericPatient = patientCandidates.filter(v => !GENERIC_DISEASE_TERMS.has(normalizeText(v)));
   const effectivePatientCandidates = nonGenericPatient.length > 0 ? nonGenericPatient : patientCandidates;
   const allStudyAreGeneric = studyCandidates.every(v => GENERIC_DISEASE_TERMS.has(normalizeText(v)));
@@ -293,14 +308,35 @@ function evaluateStudy(
         diseaseCheck.studyCandidates
       )
     );
+    return {
+      id: String(study._id ?? ''),
+      protocolo: String(study.protocolo ?? ''),
+      eligible: false,
+      compared,
+      reasons
+    };
   }
 
   if (!subtypeCheck.matched) {
     reasons.push(reason('subtype_mismatch', 'No coincide subtipo', subtype, subtypeCheck.studyCandidates));
+    return {
+      id: String(study._id ?? ''),
+      protocolo: String(study.protocolo ?? ''),
+      eligible: false,
+      compared,
+      reasons
+    };
   }
 
   if (!matchCenter(study, centers)) {
     reasons.push(reason('center_mismatch', 'Centro no contemplado en el estudio', centers, study.centros_protocolo));
+    return {
+      id: String(study._id ?? ''),
+      protocolo: String(study.protocolo ?? ''),
+      eligible: false,
+      compared,
+      reasons
+    };
   }
 
   if (!matchYesNoRule(study.metastasis, normalized.metastasis)) {
