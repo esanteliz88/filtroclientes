@@ -174,6 +174,21 @@ function normalizeCompanyCode(value: string) {
     .trim();
 }
 
+function canSeeCrossCenter(user: FastifyRequest['user']) {
+  return user.actorType === 'user' && user.role === 'super_admin';
+}
+
+function sanitizeSubmissionForActor(
+  submission: Record<string, unknown>,
+  user: FastifyRequest['user']
+) {
+  if (canSeeCrossCenter(user)) return submission;
+  const out = { ...submission };
+  delete out.matchCrossCenter;
+  delete out.matchDebug;
+  return out;
+}
+
 async function generateUniqueCompanyCode(nameOrCode: string) {
   const base = normalizeCompanyCode(nameOrCode) || 'company';
   let code = base;
@@ -434,7 +449,48 @@ export async function adminRoutes(app: App) {
       total,
       limit: parsed.data.limit,
       skip: parsed.data.skip,
-      submissions
+      submissions: submissions.map(s =>
+        sanitizeSubmissionForActor(s as unknown as Record<string, unknown>, request.user)
+      )
+    };
+  });
+
+  app.get('/submissions/:id/derivation', { config: { auth: true } }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsedParams = IdParam.safeParse(request.params);
+    if (!parsedParams.success || !isObjectId(parsedParams.data.id)) {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+
+    if (!(request.user.actorType === 'user' && request.user.role === 'super_admin')) {
+      return reply.code(403).send({ error: 'super_admin_only' });
+    }
+
+    const submission = await IntakeSubmission.findById(parsedParams.data.id).lean();
+    if (!submission) return reply.code(404).send({ error: 'submission_not_found' });
+
+    const currentCenterTotal =
+      typeof submission?.match === 'object' && submission?.match !== null
+        ? Number((submission.match as Record<string, unknown>).total_matches ?? 0)
+        : 0;
+
+    const cross = (submission.matchCrossCenter as Record<string, unknown> | null) ?? null;
+    const studiesOtherCenters = Array.isArray(cross?.studies_other_centers) ? cross?.studies_other_centers : [];
+
+    return {
+      submissionId: String(submission._id),
+      companyCodes: submission.companyCodes ?? [],
+      sourceUserRef: submission.sourceUserRef ?? null,
+      createdAt: submission.createdAt ?? null,
+      current_center: {
+        total_matches: currentCenterTotal,
+        studies: (submission.match as Record<string, unknown> | null)?.studies ?? []
+      },
+      derivation: {
+        total_matches_all_centers: Number(cross?.total_matches_all_centers ?? 0),
+        total_matches_other_centers: Number(cross?.total_matches_other_centers ?? studiesOtherCenters.length),
+        studies_other_centers: studiesOtherCenters
+      },
+      debug: submission.matchDebug ?? null
     };
   });
 

@@ -35,6 +35,21 @@ function buildUserSubmissionFilter(user: FastifyRequest['user']) {
   return { _id: null };
 }
 
+function canSeeCrossCenter(user: FastifyRequest['user']) {
+  return user.actorType === 'user' && user.role === 'super_admin';
+}
+
+function sanitizeSubmissionForActor(
+  submission: Record<string, unknown>,
+  user: FastifyRequest['user']
+) {
+  if (canSeeCrossCenter(user)) return submission;
+  const out = { ...submission };
+  delete out.matchCrossCenter;
+  delete out.matchDebug;
+  return out;
+}
+
 export async function portalRoutes(app: App) {
   app.get(
     '/submissions',
@@ -66,7 +81,9 @@ export async function portalRoutes(app: App) {
         total,
         limit: parsed.data.limit,
         skip: parsed.data.skip,
-        submissions
+        submissions: submissions.map(s =>
+          sanitizeSubmissionForActor(s as unknown as Record<string, unknown>, request.user)
+        )
       };
     }
   );

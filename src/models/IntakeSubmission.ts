@@ -8,7 +8,9 @@ const IntakeSubmissionSchema = new mongoose.Schema(
     companyCodes: { type: [String], default: [], index: true },
     rawPayload: { type: mongoose.Schema.Types.Mixed, required: true },
     normalized: { type: mongoose.Schema.Types.Mixed, required: true },
-    match: { type: mongoose.Schema.Types.Mixed, default: null }
+    match: { type: mongoose.Schema.Types.Mixed, default: null },
+    matchCrossCenter: { type: mongoose.Schema.Types.Mixed, default: null },
+    matchDebug: { type: mongoose.Schema.Types.Mixed, default: null }
   },
   { timestamps: true }
 );

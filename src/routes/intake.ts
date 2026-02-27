@@ -79,6 +79,20 @@ function sanitizeRawPayload(payload: Record<string, unknown>) {
   return out;
 }
 
+function normalizeCenter(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+}
+
+function intersectsCenters(studyCenters: unknown, selectedCenters: string[]) {
+  if (!Array.isArray(studyCenters) || selectedCenters.length === 0) return false;
+  const s = studyCenters.map(normalizeCenter);
+  return selectedCenters.some(c => s.includes(normalizeCenter(c)));
+}
+
 export async function intakeRoutes(app: App) {
   app.post('/filtroclientes', async (request: FastifyRequest, reply: FastifyReply) => {
     const parsed = IntakeBodySchema.safeParse(request.body);
@@ -90,7 +104,23 @@ export async function intakeRoutes(app: App) {
 
     const rawPayload = sanitizeRawPayload(rawBody);
     const normalized = normalizeIntakePayload(rawPayload);
-    const match = await findMatchingStudies(normalized);
+    const [match, allCentersMatch] = await Promise.all([
+      findMatchingStudies(normalized),
+      findMatchingStudies(normalized, { centersOverride: null })
+    ]);
+    const matchDebug = (match as { debug?: unknown }).debug ?? null;
+    const selectedCenters = normalized.centro ?? [];
+
+    const otherCenterStudies = (allCentersMatch.studies ?? []).filter(study => {
+      return !intersectsCenters((study as { centros_protocolo?: unknown }).centros_protocolo, selectedCenters);
+    });
+
+    const matchCrossCenter = {
+      total_matches_current_center: match.total_matches,
+      total_matches_all_centers: allCentersMatch.total_matches,
+      total_matches_other_centers: otherCenterStudies.length,
+      studies_other_centers: otherCenterStudies
+    };
 
     const saved = await IntakeSubmission.create({
       source: 'filtroclientes',
@@ -99,14 +129,20 @@ export async function intakeRoutes(app: App) {
       companyCodes: normalized.centro,
       rawPayload,
       normalized,
-      match
+      match,
+      matchCrossCenter,
+      matchDebug
     });
+
+    const canExposeCrossCenter =
+      request.user?.actorType === 'user' && request.user?.role === 'super_admin';
 
     return reply.code(201).send({
       ok: true,
       id: saved._id,
       normalized,
-      match
+      match,
+      ...(canExposeCrossCenter ? { matchCrossCenter } : {})
     });
   });
 }

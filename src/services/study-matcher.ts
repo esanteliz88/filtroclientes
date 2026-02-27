@@ -3,6 +3,36 @@ import type { NormalizedIntake } from '../utils/intake-normalizer.js';
 
 type StudyDoc = Record<string, unknown>;
 
+type MatchReasonCode =
+  | 'not_recruiting'
+  | 'disease_mismatch'
+  | 'subtype_mismatch'
+  | 'center_mismatch'
+  | 'metastasis_rule'
+  | 'cirugia_rule'
+  | 'tratamiento_rule'
+  | 'treatment_type_rule'
+  | 'ecog_below_min'
+  | 'ecog_above_max';
+
+type MatchReason = {
+  code: MatchReasonCode;
+  label: string;
+  patientValue?: unknown;
+  studyValue?: unknown;
+};
+
+type StudyEvaluation = {
+  id: string;
+  protocolo: string;
+  eligible: boolean;
+  reasons: MatchReason[];
+};
+
+type MatchOptions = {
+  centersOverride?: string[] | null;
+};
+
 const ECOG_WEIGHTS = {
   dolor: 0.25,
   descanso: 0.3,
@@ -27,7 +57,7 @@ function parseScaleValue(value: string | null, map: Record<string, number>) {
 function parseYesNo(value: unknown) {
   const normalized = normalizeText(value);
   if (!normalized) return null;
-  if (['si', 'sí', 'yes', 'true', '1'].includes(normalized)) return 'si';
+  if (['si', 'yes', 'true', '1'].includes(normalized)) return 'si';
   if (['no', 'false', '0'].includes(normalized)) return 'no';
   return normalized;
 }
@@ -114,34 +144,100 @@ function isRecruiting(study: StudyDoc) {
   return normalizeText(study.estado_protocolo) === 'reclutando';
 }
 
-export async function findMatchingStudies(normalized: NormalizedIntake) {
+function reason(
+  code: MatchReasonCode,
+  label: string,
+  patientValue?: unknown,
+  studyValue?: unknown
+): MatchReason {
+  return { code, label, patientValue, studyValue };
+}
+
+function evaluateStudy(
+  study: StudyDoc,
+  normalized: NormalizedIntake,
+  ecogScore: number | null,
+  disease: string | null,
+  subtype: string | null,
+  centers: string[]
+): StudyEvaluation {
+  const reasons: MatchReason[] = [];
+
+  if (!isRecruiting(study)) {
+    reasons.push(reason('not_recruiting', 'El estudio no está reclutando', null, study.estado_protocolo));
+    return {
+      id: String(study._id ?? ''),
+      protocolo: String(study.protocolo ?? ''),
+      eligible: false,
+      reasons
+    };
+  }
+
+  if (!includesNormalized(study.enfermedad, disease)) {
+    reasons.push(reason('disease_mismatch', 'No coincide enfermedad/tipo', disease, study.enfermedad));
+  }
+
+  if (!includesNormalized(study.subtipo, subtype)) {
+    reasons.push(reason('subtype_mismatch', 'No coincide subtipo', subtype, study.subtipo));
+  }
+
+  if (!matchCenter(study, centers)) {
+    reasons.push(reason('center_mismatch', 'Centro no contemplado en el estudio', centers, study.centros_protocolo));
+  }
+
+  if (!matchYesNoRule(study.metastasis, normalized.metastasis)) {
+    reasons.push(reason('metastasis_rule', 'No cumple regla de metástasis', normalized.metastasis, study.metastasis));
+  }
+
+  if (!matchYesNoRule(study.cirugia, normalized.cirugia)) {
+    reasons.push(reason('cirugia_rule', 'No cumple regla de cirugía', normalized.cirugia, study.cirugia));
+  }
+
+  if (!matchYesNoRule(study.tratamiento, normalized.tratamiento)) {
+    reasons.push(reason('tratamiento_rule', 'No cumple regla de tratamiento', normalized.tratamiento, study.tratamiento));
+  }
+
+  if (!matchTreatments(study, normalized.tratamiento_tipo)) {
+    reasons.push(
+      reason('treatment_type_rule', 'Algún tratamiento previo no permitido por el estudio', normalized.tratamiento_tipo, {
+        quimioterapia: study.quimioterapia,
+        radioterapia: study.radioterapia,
+        inmunoterapia: study.inmunoterapia,
+        terapia_hormonal: study.terapia_hormonal,
+        terapia_dirigida: study.terapia_dirigida
+      })
+    );
+  }
+
+  if (ecogScore !== null) {
+    const ecogMin = toNumber(study.ecog_min);
+    const ecogMax = toNumber(study.ecog_max);
+    if (ecogMin !== null && ecogScore < ecogMin) {
+      reasons.push(reason('ecog_below_min', 'ECOG por debajo del mínimo requerido', ecogScore, ecogMin));
+    }
+    if (ecogMax !== null && ecogScore > ecogMax) {
+      reasons.push(reason('ecog_above_max', 'ECOG por encima del máximo permitido', ecogScore, ecogMax));
+    }
+  }
+
+  return {
+    id: String(study._id ?? ''),
+    protocolo: String(study.protocolo ?? ''),
+    eligible: reasons.length === 0,
+    reasons
+  };
+}
+
+export async function findMatchingStudies(normalized: NormalizedIntake, options: MatchOptions = {}) {
   const ecogScore = ecogFromNormalized(normalized);
   const disease = normalized.tipo_enfermedad ?? normalized.enfermedad;
   const subtype = normalized.subtipo_enfermedad;
-  const centers = normalized.centro;
+  const centers = options.centersOverride === null ? [] : (options.centersOverride ?? normalized.centro);
 
   const studies = (await ClinicalStudy.find({ estado_protocolo: /reclutando/i }).lean()) as StudyDoc[];
-
-  const matches = studies.filter(study => {
-    if (!isRecruiting(study)) return false;
-    if (!includesNormalized(study.enfermedad, disease)) return false;
-    if (!includesNormalized(study.subtipo, subtype)) return false;
-    if (!matchCenter(study, centers)) return false;
-
-    if (!matchYesNoRule(study.metastasis, normalized.metastasis)) return false;
-    if (!matchYesNoRule(study.cirugia, normalized.cirugia)) return false;
-    if (!matchYesNoRule(study.tratamiento, normalized.tratamiento)) return false;
-    if (!matchTreatments(study, normalized.tratamiento_tipo)) return false;
-
-    if (ecogScore !== null) {
-      const ecogMin = toNumber(study.ecog_min);
-      const ecogMax = toNumber(study.ecog_max);
-      if (ecogMin !== null && ecogScore < ecogMin) return false;
-      if (ecogMax !== null && ecogScore > ecogMax) return false;
-    }
-
-    return true;
-  });
+  const evaluations = studies.map(study => evaluateStudy(study, normalized, ecogScore, disease, subtype, centers));
+  const matchedIds = new Set(evaluations.filter(e => e.eligible).map(e => e.id));
+  const matches = studies.filter(study => matchedIds.has(String(study._id ?? '')));
 
   const formatted = matches.map(study => ({
     id: String(study._id ?? ''),
@@ -155,9 +251,44 @@ export async function findMatchingStudies(normalized: NormalizedIntake) {
     centros_protocolo: Array.isArray(study.centros_protocolo) ? study.centros_protocolo : []
   }));
 
+  const reasonCount = new Map<MatchReasonCode, { label: string; count: number }>();
+  for (const evalResult of evaluations) {
+    for (const r of evalResult.reasons) {
+      const current = reasonCount.get(r.code);
+      if (current) {
+        current.count += 1;
+      } else {
+        reasonCount.set(r.code, { label: r.label, count: 1 });
+      }
+    }
+  }
+
+  const topReasons = Array.from(reasonCount.entries())
+    .map(([code, data]) => ({ code, label: data.label, count: data.count }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     ecog_score: ecogScore,
     total_matches: formatted.length,
-    studies: formatted
+    studies: formatted,
+    debug: {
+      patient_snapshot: {
+        enfermedad: normalized.enfermedad,
+        tipo_enfermedad: normalized.tipo_enfermedad,
+        subtipo_enfermedad: normalized.subtipo_enfermedad,
+        centros: normalized.centro,
+        centros_scope: centers,
+        metastasis: normalized.metastasis,
+        cirugia: normalized.cirugia,
+        tratamiento: normalized.tratamiento,
+        tratamiento_tipo: normalized.tratamiento_tipo,
+        ecog_score: ecogScore
+      },
+      evaluated_studies: evaluations.length,
+      matched_studies: formatted.length,
+      unmatched_studies: evaluations.filter(e => !e.eligible).length,
+      top_reasons: topReasons,
+      study_results: evaluations
+    }
   };
 }

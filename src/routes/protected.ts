@@ -17,6 +17,21 @@ const MetricsQuery = z.object({
   days: z.coerce.number().int().min(1).max(365).default(30)
 });
 
+function canSeeCrossCenter(user: FastifyRequest['user']) {
+  return user.actorType === 'user' && user.role === 'super_admin';
+}
+
+function sanitizeSubmissionForActor(
+  submission: Record<string, unknown>,
+  user: FastifyRequest['user']
+) {
+  if (canSeeCrossCenter(user)) return submission;
+  const out = { ...submission };
+  delete out.matchCrossCenter;
+  delete out.matchDebug;
+  return out;
+}
+
 export async function protectedRoutes(app: App) {
   app.get(
     '/data',
@@ -104,7 +119,9 @@ export async function protectedRoutes(app: App) {
         total,
         limit: parsed.data.limit,
         skip: parsed.data.skip,
-        submissions
+        submissions: submissions.map(s =>
+          sanitizeSubmissionForActor(s as unknown as Record<string, unknown>, request.user)
+        )
       };
     }
   );
