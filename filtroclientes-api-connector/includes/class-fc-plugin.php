@@ -16,6 +16,7 @@ final class FC_Plugin
     public static function boot(): void
     {
         add_action('init', [FC_CPT::class, 'register']);
+        add_action('admin_init', [FC_CPT::class, 'block_manual_create_screen']);
         add_action('admin_menu', [FC_Admin::class, 'register_menu']);
         add_action('admin_init', [FC_Settings::class, 'register_settings']);
         add_action('admin_enqueue_scripts', [FC_Admin::class, 'enqueue_assets']);

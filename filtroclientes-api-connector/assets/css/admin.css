@@ -40,11 +40,153 @@
 .fc-shortcode-table table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 920px;
+  table-layout: fixed;
 }
 
 .fc-shortcode-table th,
 .fc-shortcode-table td {
   border-bottom: 1px solid #eceff3;
-  padding: 10px;
+  padding: 9px 8px;
   text-align: left;
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.fc-shortcode-table th {
+  background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.fc-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.fc-pagination .button.disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.fc-pagination-info {
+  color: #4e5d6c;
+  font-size: 13px;
+}
+
+.fc-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.fc-table-summary {
+  margin-bottom: 10px;
+  color: #334e68;
+}
+
+.fc-filters {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+}
+
+.fc-filters-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.fc-filters-grid input,
+.fc-filters-grid select {
+  width: 100%;
+}
+
+.fc-filters-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.fc-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.fc-badge--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.fc-badge--no {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.fc-record {
+  max-width: 1200px;
+}
+
+.fc-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.fc-record-card {
+  border: 1px solid #d4dde6;
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.fc-record-card h2 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.fc-record-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.fc-record-card li {
+  margin-bottom: 8px;
+}
+
+.fc-record-card pre {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow: auto;
+  background: #0b1020;
+  color: #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .fc-record-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fc-filters-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
 }
