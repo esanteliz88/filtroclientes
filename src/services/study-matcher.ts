@@ -40,6 +40,8 @@ const ECOG_WEIGHTS = {
   ayuda: 0.45
 };
 
+const GENERIC_DISEASE_TERMS = new Set(['cancer', 'tumor', 'neoplasia', 'oncologia', 'oncologico']);
+
 function normalizeText(value: unknown) {
   return String(value ?? '')
     .normalize('NFD')
@@ -98,9 +100,77 @@ function ecogFromNormalized(normalized: NormalizedIntake) {
   return Number.parseFloat((weightedSum - 1).toFixed(2));
 }
 
-function includesNormalized(haystack: unknown, needle: string | null) {
-  if (!needle) return true;
-  return normalizeText(haystack).includes(normalizeText(needle));
+function collectStudyText(study: StudyDoc, keys: string[]) {
+  const values: string[] = [];
+  for (const key of keys) {
+    const raw = study[key];
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      values.push(raw.trim());
+    }
+  }
+  return Array.from(new Set(values));
+}
+
+function textBiDirectionalMatch(a: string, b: string) {
+  const na = normalizeText(a);
+  const nb = normalizeText(b);
+  if (!na || !nb) return false;
+  return na.includes(nb) || nb.includes(na);
+}
+
+function matchDisease(study: StudyDoc, disease: string | null, diseaseType: string | null) {
+  const patientCandidates = [disease, diseaseType]
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map(v => v.trim());
+
+  const studyCandidates = collectStudyText(study, [
+    'enfermedad',
+    'tipo_enfermedad',
+    'tipo',
+    'cancer_tipo',
+    'diagnostico',
+    'patologia'
+  ]);
+
+  if (patientCandidates.length === 0 || studyCandidates.length === 0) {
+    return { matched: true, studyCandidates };
+  }
+
+  const nonGenericPatient = patientCandidates.filter(v => !GENERIC_DISEASE_TERMS.has(normalizeText(v)));
+  const effectivePatientCandidates = nonGenericPatient.length > 0 ? nonGenericPatient : patientCandidates;
+  const allStudyAreGeneric = studyCandidates.every(v => GENERIC_DISEASE_TERMS.has(normalizeText(v)));
+
+  if (allStudyAreGeneric) {
+    return { matched: true, studyCandidates };
+  }
+
+  const matched = effectivePatientCandidates.some(patientValue =>
+    studyCandidates.some(studyValue => textBiDirectionalMatch(patientValue, studyValue))
+  );
+
+  return { matched, studyCandidates };
+}
+
+function matchSubtype(study: StudyDoc, subtype: string | null) {
+  const patientSubtype = typeof subtype === 'string' ? subtype.trim() : '';
+  if (!patientSubtype) {
+    return { matched: true, studyCandidates: [] as string[] };
+  }
+
+  const studySubtypeCandidates = collectStudyText(study, [
+    'subtipo',
+    'subtipo_enfermedad',
+    'subtipo_tumor',
+    'subtipo_protocolo',
+    'subtipo_diagnostico'
+  ]);
+
+  if (studySubtypeCandidates.length === 0) {
+    return { matched: true, studyCandidates: studySubtypeCandidates };
+  }
+
+  const matched = studySubtypeCandidates.some(studyValue => textBiDirectionalMatch(patientSubtype, studyValue));
+  return { matched, studyCandidates: studySubtypeCandidates };
 }
 
 function matchCenter(study: StudyDoc, centers: string[]) {
@@ -164,16 +234,18 @@ function evaluateStudy(
   centers: string[]
 ): StudyEvaluation {
   const reasons: MatchReason[] = [];
+  const diseaseCheck = matchDisease(study, disease, diseaseType);
+  const subtypeCheck = matchSubtype(study, subtype);
   const compared = {
     disease: {
       patient_enfermedad: disease,
       patient_tipo_enfermedad: diseaseType,
-      study_enfermedad: study.enfermedad
+      study_disease_candidates: diseaseCheck.studyCandidates
     },
     subtype: {
       patient_subtipo_enfermedad: subtype,
       patient_subtipo_clave: normalized.subtipo_clave,
-      study_subtipo: study.subtipo
+      study_subtype_candidates: subtypeCheck.studyCandidates
     },
     centers: {
       patient_centros_scope: centers,
@@ -212,15 +284,19 @@ function evaluateStudy(
     };
   }
 
-  const diseaseMatches = [disease, diseaseType].some(candidate => includesNormalized(study.enfermedad, candidate));
-  if (!diseaseMatches) {
+  if (!diseaseCheck.matched) {
     reasons.push(
-      reason('disease_mismatch', 'No coincide enfermedad/tipo', { enfermedad: disease, tipo_enfermedad: diseaseType }, study.enfermedad)
+      reason(
+        'disease_mismatch',
+        'No coincide enfermedad/tipo',
+        { enfermedad: disease, tipo_enfermedad: diseaseType },
+        diseaseCheck.studyCandidates
+      )
     );
   }
 
-  if (!includesNormalized(study.subtipo, subtype)) {
-    reasons.push(reason('subtype_mismatch', 'No coincide subtipo', subtype, study.subtipo));
+  if (!subtypeCheck.matched) {
+    reasons.push(reason('subtype_mismatch', 'No coincide subtipo', subtype, subtypeCheck.studyCandidates));
   }
 
   if (!matchCenter(study, centers)) {
