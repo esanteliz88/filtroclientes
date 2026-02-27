@@ -6,10 +6,13 @@ if (!defined('ABSPATH')) {
 
 final class FC_Api_Client
 {
-    public static function get_access_token(bool $forceRefresh = false)
+    public static function get_access_token(bool $forceRefresh = false, string $scope = 'read')
     {
+        $scope = $scope === 'write' ? 'write' : 'read';
+        $transientKey = FC_Settings::TOKEN_TRANSIENT . '_' . $scope;
+
         if (!$forceRefresh) {
-            $cached = get_transient(FC_Settings::TOKEN_TRANSIENT);
+            $cached = get_transient($transientKey);
             if (is_string($cached) && $cached !== '') {
                 return $cached;
             }
@@ -27,7 +30,7 @@ final class FC_Api_Client
                 'grant_type' => 'client_credentials',
                 'client_id' => $settings['client_id'],
                 'client_secret' => $settings['client_secret'],
-                'scope' => 'read'
+                'scope' => $scope
             ])
         ]);
 
@@ -38,12 +41,12 @@ final class FC_Api_Client
         $code = (int) wp_remote_retrieve_response_code($response);
         $body = json_decode((string) wp_remote_retrieve_body($response), true);
         if ($code !== 200 || !is_array($body) || empty($body['access_token'])) {
-            return new WP_Error('fc_token_error', 'No se pudo obtener token.', ['status' => $code, 'body' => $body]);
+            return new WP_Error('fc_token_error', 'No se pudo obtener token (' . $scope . ').', ['status' => $code, 'body' => $body]);
         }
 
         $token = (string) $body['access_token'];
         $ttl = isset($body['expires_in']) ? max(60, ((int) $body['expires_in']) - 60) : 3000;
-        set_transient(FC_Settings::TOKEN_TRANSIENT, $token, $ttl);
+        set_transient($transientKey, $token, $ttl);
 
         return $token;
     }
@@ -62,6 +65,19 @@ final class FC_Api_Client
         return self::request_json('/api/metrics', [
             'days' => max(1, min(365, $days))
         ]);
+    }
+
+    public static function purge_submissions(?int $olderThanDays = null, bool $onlyWithoutMatch = false)
+    {
+        $query = [];
+        if ($olderThanDays !== null && $olderThanDays > 0) {
+            $query['olderThanDays'] = max(1, min(3650, $olderThanDays));
+        }
+        if ($onlyWithoutMatch) {
+            $query['onlyWithoutMatch'] = 'true';
+        }
+
+        return self::request_json('/api/submissions', $query, 'DELETE', 'write');
     }
 
     public static function fetch_submission_by_id(string $externalId, int $maxPages = 20, int $pageLimit = 200)
@@ -104,14 +120,14 @@ final class FC_Api_Client
         return new WP_Error('fc_not_found', 'No se encontro el registro en API.');
     }
 
-    private static function request_json(string $path, array $query = [])
+    private static function request_json(string $path, array $query = [], string $method = 'GET', string $scope = 'read')
     {
         $settings = FC_Settings::get();
         if ($settings['base_url'] === '') {
             return new WP_Error('fc_missing_config', 'Base URL no configurada.');
         }
 
-        $token = self::get_access_token();
+        $token = self::get_access_token(false, $scope);
         if (is_wp_error($token)) {
             return $token;
         }
@@ -122,8 +138,9 @@ final class FC_Api_Client
             $url = add_query_arg($query, $url);
         }
 
-        $request = static function (string $jwt) use ($url) {
-            return wp_remote_get($url, [
+        $request = static function (string $jwt) use ($url, $method) {
+            return wp_remote_request($url, [
+                'method' => strtoupper($method),
                 'timeout' => 25,
                 'headers' => [
                     'Authorization' => 'Bearer ' . $jwt
@@ -138,7 +155,7 @@ final class FC_Api_Client
 
         $code = (int) wp_remote_retrieve_response_code($response);
         if ($code === 401) {
-            $fresh = self::get_access_token(true);
+            $fresh = self::get_access_token(true, $scope);
             if (is_wp_error($fresh)) {
                 return $fresh;
             }
@@ -149,9 +166,13 @@ final class FC_Api_Client
             $code = (int) wp_remote_retrieve_response_code($response);
         }
 
-        $body = json_decode((string) wp_remote_retrieve_body($response), true);
-        if ($code !== 200 || !is_array($body)) {
+        $rawBody = (string) wp_remote_retrieve_body($response);
+        $body = $rawBody !== '' ? json_decode($rawBody, true) : [];
+        if ($code !== 200 && $code !== 204) {
             return new WP_Error('fc_api_error', 'Error consultando API.', ['status' => $code, 'body' => $body, 'path' => $path]);
+        }
+        if (!is_array($body)) {
+            return new WP_Error('fc_api_error', 'Respuesta API invalida.', ['status' => $code, 'body' => $rawBody, 'path' => $path]);
         }
 
         return $body;
