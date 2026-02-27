@@ -50,6 +50,62 @@ final class FC_Api_Client
 
     public static function fetch_submissions(int $limit = 50, int $skip = 0, bool $onlyWithMatch = false)
     {
+        return self::request_json('/api/submissions', [
+            'limit' => max(1, min(200, $limit)),
+            'skip' => max(0, $skip),
+            'onlyWithMatch' => $onlyWithMatch ? 'true' : 'false'
+        ]);
+    }
+
+    public static function fetch_metrics(int $days = 30)
+    {
+        return self::request_json('/api/metrics', [
+            'days' => max(1, min(365, $days))
+        ]);
+    }
+
+    public static function fetch_submission_by_id(string $externalId, int $maxPages = 20, int $pageLimit = 200)
+    {
+        $target = trim($externalId);
+        if ($target === '') {
+            return new WP_Error('fc_missing_id', 'Falta external_id.');
+        }
+
+        $safePages = max(1, min(100, $maxPages));
+        $safeLimit = max(1, min(200, $pageLimit));
+        $skip = 0;
+
+        for ($page = 0; $page < $safePages; $page++) {
+            $response = self::fetch_submissions($safeLimit, $skip, false);
+            if (is_wp_error($response)) {
+                return $response;
+            }
+
+            $items = isset($response['submissions']) && is_array($response['submissions'])
+                ? $response['submissions']
+                : [];
+
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $currentId = isset($item['_id']) ? (string) $item['_id'] : '';
+                if ($currentId === $target) {
+                    return $item;
+                }
+            }
+
+            if (count($items) < $safeLimit) {
+                break;
+            }
+            $skip += $safeLimit;
+        }
+
+        return new WP_Error('fc_not_found', 'No se encontro el registro en API.');
+    }
+
+    private static function request_json(string $path, array $query = [])
+    {
         $settings = FC_Settings::get();
         if ($settings['base_url'] === '') {
             return new WP_Error('fc_missing_config', 'Base URL no configurada.');
@@ -60,11 +116,11 @@ final class FC_Api_Client
             return $token;
         }
 
-        $url = add_query_arg([
-            'limit' => max(1, min(200, $limit)),
-            'skip' => max(0, $skip),
-            'onlyWithMatch' => $onlyWithMatch ? 'true' : 'false'
-        ], $settings['base_url'] . '/api/submissions');
+        $baseUrl = rtrim($settings['base_url'], '/');
+        $url = $baseUrl . $path;
+        if (!empty($query)) {
+            $url = add_query_arg($query, $url);
+        }
 
         $request = static function (string $jwt) use ($url) {
             return wp_remote_get($url, [
@@ -95,7 +151,7 @@ final class FC_Api_Client
 
         $body = json_decode((string) wp_remote_retrieve_body($response), true);
         if ($code !== 200 || !is_array($body)) {
-            return new WP_Error('fc_api_error', 'Error consultando /api/submissions.', ['status' => $code, 'body' => $body]);
+            return new WP_Error('fc_api_error', 'Error consultando API.', ['status' => $code, 'body' => $body, 'path' => $path]);
         }
 
         return $body;

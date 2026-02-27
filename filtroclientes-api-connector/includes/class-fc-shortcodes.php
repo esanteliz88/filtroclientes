@@ -25,70 +25,23 @@ final class FC_Shortcodes
         }
 
         $filters = self::read_filters();
-
-        $metaQuery = ['relation' => 'AND'];
-        if ($filters['match'] === 'with') {
-            $metaQuery[] = [
-                'key' => '_fc_match_total',
-                'value' => 0,
-                'compare' => '>',
-                'type' => 'NUMERIC'
-            ];
-        } elseif ($filters['match'] === 'without') {
-            $metaQuery[] = [
-                'key' => '_fc_match_total',
-                'value' => 0,
-                'compare' => '=',
-                'type' => 'NUMERIC'
-            ];
+        $apiItems = self::fetch_submissions_live(20, 200);
+        if (is_wp_error($apiItems)) {
+            return '<div class="notice notice-error"><p>' . esc_html($apiItems->get_error_message()) . '</p></div>';
         }
-
-        $filterMap = [
-            'contact' => '_fc_filter_contact',
-            'email' => '_fc_filter_email',
-            'tipo' => '_fc_filter_tipo',
-            'subtipo' => '_fc_filter_subtipo',
-            'centro' => '_fc_filter_centro',
-            'ciudad' => '_fc_filter_ciudad'
-        ];
-
-        foreach ($filterMap as $field => $metaKey) {
-            if ($filters[$field] !== '') {
-                $metaQuery[] = [
-                    'key' => $metaKey,
-                    'value' => $filters[$field],
-                    'compare' => 'LIKE'
-                ];
-            }
-        }
-
-        $queryArgs = [
-            'post_type' => FC_CPT::POST_TYPE,
-            'post_status' => 'publish',
-            'posts_per_page' => $perPage,
-            'paged' => $currentPage,
-            'orderby' => 'date',
-            'order' => 'DESC',
-            'no_found_rows' => false
-        ];
-
-        if (count($metaQuery) > 1) {
-            $queryArgs['meta_query'] = $metaQuery;
-        }
-
-        $query = new WP_Query($queryArgs);
 
         $rows = [];
-        foreach ($query->posts as $post) {
-            $postId = (int) $post->ID;
-            $normalized = self::normalize_for_display(self::decode_meta_json($postId, '_fc_normalized_payload'));
-            $matchPayload = self::normalize_for_display(self::decode_meta_json($postId, '_fc_match_payload'));
-            $createdAt = self::normalize_string((string) get_post_meta($postId, '_fc_created_at', true));
+        foreach ($apiItems as $item) {
+            $normalized = self::normalize_for_display(isset($item['normalized']) && is_array($item['normalized']) ? $item['normalized'] : []);
+            $matchPayload = self::normalize_for_display(isset($item['match']) && is_array($item['match']) ? $item['match'] : []);
+            $externalId = isset($item['_id']) ? self::normalize_string((string) $item['_id']) : '';
+            if ($externalId === '') {
+                continue;
+            }
 
             $matchTotal = isset($matchPayload['total_matches']) ? (int) $matchPayload['total_matches'] : 0;
-
-            $rows[] = [
-                'post_id' => $postId,
+            $row = [
+                'external_id' => $externalId,
                 'entry_date' => isset($normalized['entry_date']) ? self::value_to_string($normalized['entry_date']) : '',
                 'contact_name' => isset($normalized['contacto_nombre']) ? self::value_to_string($normalized['contacto_nombre']) : '',
                 'contact_email' => isset($normalized['contacto_email']) ? self::value_to_string($normalized['contacto_email']) : '',
@@ -99,12 +52,21 @@ final class FC_Shortcodes
                 'ecog_score' => isset($matchPayload['ecog_score']) ? self::value_to_string($matchPayload['ecog_score']) : '',
                 'match_total' => $matchTotal,
                 'has_match' => $matchTotal > 0,
-                'created_at' => $createdAt
+                'created_at' => isset($item['createdAt']) ? self::normalize_string((string) $item['createdAt']) : ''
             ];
+
+            if (!self::row_matches_filters($row, $filters)) {
+                continue;
+            }
+
+            $rows[] = $row;
         }
 
-        $totalPages = max(1, (int) $query->max_num_pages);
-        $totalItems = (int) $query->found_posts;
+        $totalItems = count($rows);
+        $totalPages = max(1, (int) ceil($totalItems / $perPage));
+        $currentPage = min($currentPage, $totalPages);
+        $offset = ($currentPage - 1) * $perPage;
+        $pageRows = array_slice($rows, $offset, $perPage);
 
         ob_start();
         ?>
@@ -149,10 +111,10 @@ final class FC_Shortcodes
                     </tr>
                     </thead>
                     <tbody>
-                    <?php if (empty($rows)) : ?>
+                    <?php if (empty($pageRows)) : ?>
                         <tr><td colspan="10">Sin datos con esos filtros.</td></tr>
                     <?php else : ?>
-                        <?php foreach ($rows as $row) : ?>
+                        <?php foreach ($pageRows as $row) : ?>
                             <tr>
                                 <td><?php echo esc_html((string) ($row['entry_date'] !== '' ? $row['entry_date'] : $row['created_at'])); ?></td>
                                 <td><?php echo esc_html((string) $row['contact_name']); ?></td>
@@ -170,7 +132,7 @@ final class FC_Shortcodes
                                 <td>
                                     <a class="button button-small" href="<?php echo esc_url(add_query_arg([
                                         'page' => 'fc-record',
-                                        'record_id' => (int) $row['post_id']
+                                        'external_id' => (string) $row['external_id']
                                     ], admin_url('admin.php'))); ?>">Abrir ficha</a>
                                 </td>
                             </tr>
@@ -192,8 +154,63 @@ final class FC_Shortcodes
         </div>
         <?php
 
-        wp_reset_postdata();
         return (string) ob_get_clean();
+    }
+
+    private static function fetch_submissions_live(int $maxPages, int $limitPerPage)
+    {
+        $items = [];
+        $skip = 0;
+        $safePages = max(1, min(100, $maxPages));
+        $safeLimit = max(1, min(200, $limitPerPage));
+
+        for ($page = 0; $page < $safePages; $page++) {
+            $response = FC_Api_Client::fetch_submissions($safeLimit, $skip, false);
+            if (is_wp_error($response)) {
+                return $response;
+            }
+
+            $batch = isset($response['submissions']) && is_array($response['submissions'])
+                ? $response['submissions']
+                : [];
+
+            foreach ($batch as $item) {
+                if (is_array($item)) {
+                    $items[] = $item;
+                }
+            }
+
+            if (count($batch) < $safeLimit) {
+                break;
+            }
+            $skip += $safeLimit;
+        }
+
+        return $items;
+    }
+
+    private static function row_matches_filters(array $row, array $filters): bool
+    {
+        if ($filters['match'] === 'with' && !(bool) $row['has_match']) {
+            return false;
+        }
+        if ($filters['match'] === 'without' && (bool) $row['has_match']) {
+            return false;
+        }
+
+        $contains = static function (string $haystack, string $needle): bool {
+            if ($needle === '') {
+                return true;
+            }
+            return strpos(FC_Shortcodes::normalize_filter_term($haystack), $needle) !== false;
+        };
+
+        return $contains((string) $row['contact_name'], $filters['contact'])
+            && $contains((string) $row['contact_email'], $filters['email'])
+            && $contains((string) $row['tipo_enfermedad'], $filters['tipo'])
+            && $contains((string) $row['subtipo_enfermedad'], $filters['subtipo'])
+            && $contains((string) $row['centro'], $filters['centro'])
+            && $contains((string) $row['ciudad'], $filters['ciudad']);
     }
 
     private static function read_filters(): array
@@ -223,25 +240,14 @@ final class FC_Shortcodes
         return 'all';
     }
 
-    private static function normalize_filter_term(string $value): string
+    public static function normalize_filter_term(string $value): string
     {
         $value = self::normalize_string($value);
         $value = function_exists('remove_accents') ? remove_accents($value) : $value;
         return strtolower(trim($value));
     }
 
-    private static function decode_meta_json(int $postId, string $metaKey): array
-    {
-        $raw = get_post_meta($postId, $metaKey, true);
-        if (!is_string($raw) || $raw === '') {
-            return [];
-        }
-
-        $decoded = json_decode($raw, true);
-        return is_array($decoded) ? $decoded : [];
-    }
-
-    private static function normalize_for_display($value)
+    public static function normalize_for_display($value)
     {
         if (is_array($value)) {
             $normalized = [];
@@ -258,7 +264,7 @@ final class FC_Shortcodes
         return $value;
     }
 
-    private static function normalize_string(string $value): string
+    public static function normalize_string(string $value): string
     {
         $value = trim($value);
         if ($value === '') {
@@ -275,7 +281,7 @@ final class FC_Shortcodes
             return html_entity_decode('&#x' . strtolower((string) $m[1]) . ';', ENT_QUOTES | ENT_HTML5, 'UTF-8');
         }, $value);
 
-        if (preg_match('/u00[0-9a-fA-F]{2}|Ã|Â/', $value) === 1) {
+        if (preg_match('/u00[0-9a-fA-F]{2}|Ãƒ|Ã‚/', $value) === 1) {
             $latin1ToUtf8 = @mb_convert_encoding($value, 'UTF-8', 'ISO-8859-1');
             if (is_string($latin1ToUtf8) && $latin1ToUtf8 !== '') {
                 $value = $latin1ToUtf8;
@@ -285,7 +291,7 @@ final class FC_Shortcodes
         return trim((string) preg_replace('/\s+/', ' ', $value));
     }
 
-    private static function value_to_string($value): string
+    public static function value_to_string($value): string
     {
         if (is_array($value)) {
             $isList = array_keys($value) === range(0, count($value) - 1);
