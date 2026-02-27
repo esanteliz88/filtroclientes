@@ -26,6 +26,7 @@ type StudyEvaluation = {
   id: string;
   protocolo: string;
   eligible: boolean;
+  compared: Record<string, unknown>;
   reasons: MatchReason[];
 };
 
@@ -158,10 +159,47 @@ function evaluateStudy(
   normalized: NormalizedIntake,
   ecogScore: number | null,
   disease: string | null,
+  diseaseType: string | null,
   subtype: string | null,
   centers: string[]
 ): StudyEvaluation {
   const reasons: MatchReason[] = [];
+  const compared = {
+    disease: {
+      patient_enfermedad: disease,
+      patient_tipo_enfermedad: diseaseType,
+      study_enfermedad: study.enfermedad
+    },
+    subtype: {
+      patient_subtipo_enfermedad: subtype,
+      patient_subtipo_clave: normalized.subtipo_clave,
+      study_subtipo: study.subtipo
+    },
+    centers: {
+      patient_centros_scope: centers,
+      study_centros_protocolo: study.centros_protocolo
+    },
+    rules_yes_no: {
+      metastasis: { patient: normalized.metastasis, study: study.metastasis },
+      cirugia: { patient: normalized.cirugia, study: study.cirugia },
+      tratamiento: { patient: normalized.tratamiento, study: study.tratamiento }
+    },
+    treatment_types: {
+      patient: normalized.tratamiento_tipo,
+      study: {
+        quimioterapia: study.quimioterapia,
+        radioterapia: study.radioterapia,
+        inmunoterapia: study.inmunoterapia,
+        terapia_hormonal: study.terapia_hormonal,
+        terapia_dirigida: study.terapia_dirigida
+      }
+    },
+    ecog: {
+      patient_ecog_score: ecogScore,
+      study_ecog_min: study.ecog_min,
+      study_ecog_max: study.ecog_max
+    }
+  };
 
   if (!isRecruiting(study)) {
     reasons.push(reason('not_recruiting', 'El estudio no está reclutando', null, study.estado_protocolo));
@@ -169,12 +207,16 @@ function evaluateStudy(
       id: String(study._id ?? ''),
       protocolo: String(study.protocolo ?? ''),
       eligible: false,
+      compared,
       reasons
     };
   }
 
-  if (!includesNormalized(study.enfermedad, disease)) {
-    reasons.push(reason('disease_mismatch', 'No coincide enfermedad/tipo', disease, study.enfermedad));
+  const diseaseMatches = [disease, diseaseType].some(candidate => includesNormalized(study.enfermedad, candidate));
+  if (!diseaseMatches) {
+    reasons.push(
+      reason('disease_mismatch', 'No coincide enfermedad/tipo', { enfermedad: disease, tipo_enfermedad: diseaseType }, study.enfermedad)
+    );
   }
 
   if (!includesNormalized(study.subtipo, subtype)) {
@@ -224,18 +266,20 @@ function evaluateStudy(
     id: String(study._id ?? ''),
     protocolo: String(study.protocolo ?? ''),
     eligible: reasons.length === 0,
+    compared,
     reasons
   };
 }
 
 export async function findMatchingStudies(normalized: NormalizedIntake, options: MatchOptions = {}) {
   const ecogScore = ecogFromNormalized(normalized);
-  const disease = normalized.tipo_enfermedad ?? normalized.enfermedad;
+  const disease = normalized.enfermedad;
+  const diseaseType = normalized.tipo_enfermedad;
   const subtype = normalized.subtipo_enfermedad;
   const centers = options.centersOverride === null ? [] : (options.centersOverride ?? normalized.centro);
 
   const studies = (await ClinicalStudy.find({ estado_protocolo: /reclutando/i }).lean()) as StudyDoc[];
-  const evaluations = studies.map(study => evaluateStudy(study, normalized, ecogScore, disease, subtype, centers));
+  const evaluations = studies.map(study => evaluateStudy(study, normalized, ecogScore, disease, diseaseType, subtype, centers));
   const matchedIds = new Set(evaluations.filter(e => e.eligible).map(e => e.id));
   const matches = studies.filter(study => matchedIds.has(String(study._id ?? '')));
 
@@ -272,10 +316,25 @@ export async function findMatchingStudies(normalized: NormalizedIntake, options:
     total_matches: formatted.length,
     studies: formatted,
     debug: {
+      patient_input: {
+        subtipo_clave: normalized.subtipo_clave,
+        subtipo_enfermedad: normalized.subtipo_enfermedad,
+        enfermedad: normalized.enfermedad,
+        tipo_enfermedad: normalized.tipo_enfermedad,
+        centro: normalized.centro,
+        metastasis: normalized.metastasis,
+        cirugia: normalized.cirugia,
+        tratamiento: normalized.tratamiento,
+        tratamiento_tipo: normalized.tratamiento_tipo,
+        ecog_dolor: normalized.ecog_dolor,
+        ecog_descanso: normalized.ecog_descanso,
+        ecog_ayuda: normalized.ecog_ayuda
+      },
       patient_snapshot: {
         enfermedad: normalized.enfermedad,
         tipo_enfermedad: normalized.tipo_enfermedad,
         subtipo_enfermedad: normalized.subtipo_enfermedad,
+        subtipo_clave: normalized.subtipo_clave,
         centros: normalized.centro,
         centros_scope: centers,
         metastasis: normalized.metastasis,

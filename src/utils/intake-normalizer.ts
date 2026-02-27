@@ -90,8 +90,16 @@ function toUserRef(value: unknown) {
 }
 
 export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake {
+  const yesNoValues = new Set(['si', 'sí', 'no', 'yes', 'true', 'false', '1', '0']);
   const subtipoEntry = Object.entries(payload).find(([key, value]) => {
-    return key.startsWith('subtipo_') && typeof value === 'string' && value.trim().length > 0;
+    if (!key.startsWith('subtipo_') || typeof value !== 'string') return false;
+    const cleaned = value.trim();
+    if (cleaned.length === 0) return false;
+    const lowered = cleaned
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase();
+    return !yesNoValues.has(lowered);
   });
 
   return {

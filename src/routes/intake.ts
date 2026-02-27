@@ -41,7 +41,10 @@ async function authorizeWebhookRequest(app: App, request: FastifyRequest, body: 
       const allowed = isAllowedByPermissions(request.user.perms, request.method, request.url);
       if (!allowed) return { ok: false as const, code: 403, error: 'not_allowed' };
     }
-    return { ok: true as const };
+    const authCompanyCodes = (request.user.companyCodes || [])
+      .map(c => String(c).toLowerCase().trim())
+      .filter(Boolean);
+    return { ok: true as const, companyCodes: authCompanyCodes };
   }
 
   const clientId = String(body.client_id ?? body.clientId ?? '').trim();
@@ -67,7 +70,10 @@ async function authorizeWebhookRequest(app: App, request: FastifyRequest, body: 
     if (!allowed) return { ok: false as const, code: 403, error: 'not_allowed' };
   }
 
-  return { ok: true as const };
+  const clientCompanyCodes = (client.companyCodes || [])
+    .map(c => String(c).toLowerCase().trim())
+    .filter(Boolean);
+  return { ok: true as const, companyCodes: clientCompanyCodes };
 }
 
 function sanitizeRawPayload(payload: Record<string, unknown>) {
@@ -122,11 +128,14 @@ export async function intakeRoutes(app: App) {
       studies_other_centers: otherCenterStudies
     };
 
+    const ownerCompanyCodes =
+      auth.companyCodes && auth.companyCodes.length > 0 ? auth.companyCodes : normalized.centro;
+
     const saved = await IntakeSubmission.create({
       source: 'filtroclientes',
       sourceUserId: normalized.user_id,
       sourceUserRef: normalized.user_ref,
-      companyCodes: normalized.centro,
+      companyCodes: ownerCompanyCodes,
       rawPayload,
       normalized,
       match,
