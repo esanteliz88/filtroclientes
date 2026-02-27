@@ -13,6 +13,14 @@ const SubmissionQuery = z.object({
   sourceUserId: z.coerce.number().int().optional()
 });
 
+const SubmissionDeleteQuery = z.object({
+  olderThanDays: z.coerce.number().int().min(1).max(3650).optional(),
+  onlyWithoutMatch: z
+    .union([z.literal('true'), z.literal('false')])
+    .optional()
+    .transform(v => (v === undefined ? undefined : v === 'true'))
+});
+
 const MetricsQuery = z.object({
   days: z.coerce.number().int().min(1).max(365).default(30)
 });
@@ -168,6 +176,45 @@ export async function protectedRoutes(app: App) {
         total,
         with_match: withMatch,
         without_match: withoutMatch
+      };
+    }
+  );
+
+  app.delete(
+    '/submissions',
+    {
+      config: { auth: true, scopes: ['write'], permissions: true }
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (request.user.actorType === 'user') {
+        return reply.code(403).send({ error: 'user_token_not_allowed' });
+      }
+
+      const parsed = SubmissionDeleteQuery.safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
+
+      const companyCodes = (request.user.companyCodes || []).map(c => String(c).toLowerCase());
+      if (!request.user.isAdmin && companyCodes.length === 0) {
+        return reply.code(403).send({ error: 'missing_company_scope' });
+      }
+
+      const filter: Record<string, unknown> = {};
+      if (!request.user.isAdmin) {
+        filter.companyCodes = { $in: companyCodes };
+      }
+      if (parsed.data.onlyWithoutMatch === true) {
+        filter['$or'] = [{ 'match.total_matches': 0 }, { match: null }];
+      }
+      if (parsed.data.olderThanDays !== undefined) {
+        const before = new Date();
+        before.setDate(before.getDate() - parsed.data.olderThanDays);
+        filter.createdAt = { $lte: before };
+      }
+
+      const result = await IntakeSubmission.deleteMany(filter);
+      return {
+        deleted_count: result.deletedCount ?? 0,
+        filter
       };
     }
   );
