@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 final class FC_Shortcodes
 {
+    private static $lastResponseProbe = [];
+
     public static function render_submissions_table(array $atts): string
     {
         $atts = shortcode_atts([
@@ -68,6 +70,14 @@ final class FC_Shortcodes
         ob_start();
         ?>
         <div class="fc-shortcode-table">
+            <?php if (empty($apiItems)) : ?>
+                <div class="notice notice-warning"><p>
+                    API devolvio 0 items para la tabla.
+                    <?php if (!empty(self::$lastResponseProbe)) : ?>
+                        Debug: <?php echo esc_html(wp_json_encode(self::$lastResponseProbe, JSON_UNESCAPED_UNICODE)); ?>
+                    <?php endif; ?>
+                </p></div>
+            <?php endif; ?>
             <form method="get" class="fc-filters">
                 <input type="hidden" name="page" value="<?php echo esc_attr(isset($_GET['page']) ? (string) $_GET['page'] : 'fc-dashboard'); ?>">
                 <div class="fc-filters-grid">
@@ -164,6 +174,7 @@ final class FC_Shortcodes
         $skip = 0;
         $safePages = max(1, min(100, $maxPages));
         $safeLimit = max(1, min(200, $limitPerPage));
+        self::$lastResponseProbe = [];
 
         for ($page = 0; $page < $safePages; $page++) {
             $response = FC_Api_Client::fetch_submissions($safeLimit, $skip, false);
@@ -171,9 +182,11 @@ final class FC_Shortcodes
                 return $response;
             }
 
-            $batch = isset($response['submissions']) && is_array($response['submissions'])
-                ? $response['submissions']
-                : [];
+            if ($page === 0) {
+                self::$lastResponseProbe = self::probe_response($response);
+            }
+
+            $batch = self::extract_submissions_batch($response);
 
             foreach ($batch as $item) {
                 if (is_array($item)) {
@@ -188,6 +201,64 @@ final class FC_Shortcodes
         }
 
         return $items;
+    }
+
+    private static function extract_submissions_batch($response): array
+    {
+        if (is_array($response)) {
+            if (isset($response['submissions']) && is_array($response['submissions'])) {
+                return $response['submissions'];
+            }
+            if (isset($response['data']) && is_array($response['data'])) {
+                return $response['data'];
+            }
+            if (isset($response['items']) && is_array($response['items'])) {
+                return $response['items'];
+            }
+            if (isset($response['docs']) && is_array($response['docs'])) {
+                return $response['docs'];
+            }
+            if (isset($response['results']) && is_array($response['results'])) {
+                return $response['results'];
+            }
+
+            $isList = array_keys($response) === range(0, count($response) - 1);
+            if ($isList) {
+                return $response;
+            }
+
+            // Recursive fallback for nested payloads like { data: { items: [...] } }
+            foreach ($response as $value) {
+                if (is_array($value)) {
+                    $nested = self::extract_submissions_batch($value);
+                    if (!empty($nested)) {
+                        return $nested;
+                    }
+                }
+            }
+        }
+
+        return [];
+    }
+
+    private static function probe_response($response): array
+    {
+        if (!is_array($response)) {
+            return ['type' => gettype($response)];
+        }
+
+        $keys = array_keys($response);
+        $probe = [
+            'keys' => $keys,
+            'total' => isset($response['total']) ? $response['total'] : null,
+            'limit' => isset($response['limit']) ? $response['limit'] : null,
+            'skip' => isset($response['skip']) ? $response['skip'] : null
+        ];
+
+        $batch = self::extract_submissions_batch($response);
+        $probe['batch_count'] = is_array($batch) ? count($batch) : 0;
+
+        return $probe;
     }
 
     private static function row_matches_filters(array $row, array $filters): bool

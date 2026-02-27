@@ -9,16 +9,20 @@ final class FC_Api_Client
     public static function get_access_token(bool $forceRefresh = false, string $scope = 'read')
     {
         $scope = $scope === 'write' ? 'write' : 'read';
-        $transientKey = FC_Settings::TOKEN_TRANSIENT . '_' . $scope;
+        $settings = FC_Settings::get();
+        $transientKey = self::token_transient_key($scope, $settings);
+        $legacyTransientKey = FC_Settings::TOKEN_TRANSIENT . '_' . $scope;
 
         if (!$forceRefresh) {
             $cached = get_transient($transientKey);
             if (is_string($cached) && $cached !== '') {
                 return $cached;
             }
+
+            // Cleanup stale legacy cache key if present.
+            delete_transient($legacyTransientKey);
         }
 
-        $settings = FC_Settings::get();
         if ($settings['base_url'] === '' || $settings['client_id'] === '' || $settings['client_secret'] === '') {
             return new WP_Error('fc_missing_config', 'Falta configurar base_url, client_id o client_secret.');
         }
@@ -53,11 +57,15 @@ final class FC_Api_Client
 
     public static function fetch_submissions(int $limit = 50, int $skip = 0, bool $onlyWithMatch = false)
     {
-        return self::request_json('/api/submissions', [
+        $query = [
             'limit' => max(1, min(200, $limit)),
-            'skip' => max(0, $skip),
-            'onlyWithMatch' => $onlyWithMatch ? 'true' : 'false'
-        ]);
+            'skip' => max(0, $skip)
+        ];
+        if ($onlyWithMatch) {
+            $query['onlyWithMatch'] = 'true';
+        }
+
+        return self::request_json('/api/submissions', $query);
     }
 
     public static function fetch_metrics(int $days = 30)
@@ -92,7 +100,14 @@ final class FC_Api_Client
                 if (!is_array($item)) {
                     continue;
                 }
-                $currentId = isset($item['_id']) ? (string) $item['_id'] : '';
+                $currentId = '';
+                if (isset($item['_id'])) {
+                    if (is_string($item['_id'])) {
+                        $currentId = $item['_id'];
+                    } elseif (is_array($item['_id']) && isset($item['_id']['$oid']) && is_string($item['_id']['$oid'])) {
+                        $currentId = $item['_id']['$oid'];
+                    }
+                }
                 if ($currentId === $target) {
                     return $item;
                 }
@@ -163,5 +178,11 @@ final class FC_Api_Client
         }
 
         return $body;
+    }
+
+    private static function token_transient_key(string $scope, array $settings): string
+    {
+        $fingerprint = md5((string) ($settings['base_url'] ?? '') . '|' . (string) ($settings['client_id'] ?? ''));
+        return FC_Settings::TOKEN_TRANSIENT . '_' . $scope . '_' . substr($fingerprint, 0, 12);
     }
 }
