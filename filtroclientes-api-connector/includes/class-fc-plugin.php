@@ -16,7 +16,7 @@ final class FC_Plugin
         add_action('admin_menu', [FC_Admin::class, 'register_menu']);
         add_action('admin_init', [FC_Settings::class, 'register_settings']);
         add_action('admin_enqueue_scripts', [FC_Admin::class, 'enqueue_assets']);
-        add_action('admin_post_fc_purge_submissions', [FC_Admin::class, 'handle_purge_submissions']);
+        add_action('admin_post_fc_clear_credentials', [FC_Admin::class, 'handle_clear_credentials']);
         add_shortcode('filtroclientes_registros', [FC_Shortcodes::class, 'render_submissions_table']);
     }
 }

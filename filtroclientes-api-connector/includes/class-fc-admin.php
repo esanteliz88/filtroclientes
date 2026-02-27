@@ -82,25 +82,6 @@ final class FC_Admin
                 <p>Este panel lee directamente desde la API en cada carga. No usa registros locales.</p>
             </div>
             <div class="fc-panel">
-                <h2>Limpieza de registros</h2>
-                <p>Borra en la API los registros visibles por este client_id.</p>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Esto eliminara registros en la API. ¿Continuar?');">
-                    <input type="hidden" name="action" value="fc_purge_submissions">
-                    <?php wp_nonce_field('fc_purge_submissions'); ?>
-                    <p>
-                        <label>
-                            <input type="checkbox" name="only_without_match" value="1">
-                            Solo sin match
-                        </label>
-                    </p>
-                    <p>
-                        <label for="fc_older_days"><strong>Mas antiguos que (dias)</strong></label><br>
-                        <input id="fc_older_days" name="older_than_days" type="number" min="1" max="3650" class="small-text" placeholder="Opcional">
-                    </p>
-                    <?php submit_button('Borrar registros en API', 'delete', 'submit', false); ?>
-                </form>
-            </div>
-            <div class="fc-panel">
                 <h2>Registros recientes</h2>
                 <?php echo wp_kses_post($recentTable); ?>
             </div>
@@ -118,6 +99,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>Conexion API</h1>
+            <?php self::render_notice(); ?>
             <div class="fc-panel">
                 <form method="post" action="options.php">
                     <?php settings_fields('fc_api_group'); ?>
@@ -140,6 +122,15 @@ final class FC_Admin
                         </tr>
                     </table>
                     <?php submit_button('Guardar configuracion'); ?>
+                </form>
+            </div>
+            <div class="fc-panel">
+                <h2>Limpiar credenciales locales</h2>
+                <p>Borra credenciales y token cacheado en WordPress. No borra registros en la API.</p>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Se borraran las credenciales guardadas en WordPress. ¿Continuar?');">
+                    <input type="hidden" name="action" value="fc_clear_credentials">
+                    <?php wp_nonce_field('fc_clear_credentials'); ?>
+                    <?php submit_button('Borrar credenciales de WP', 'secondary', 'submit', false); ?>
                 </form>
             </div>
         </div>
@@ -236,29 +227,24 @@ final class FC_Admin
         <?php
     }
 
-    public static function handle_purge_submissions(): void
+    public static function handle_clear_credentials(): void
     {
         if (!current_user_can('manage_options')) {
             wp_die('No autorizado');
         }
 
-        check_admin_referer('fc_purge_submissions');
+        check_admin_referer('fc_clear_credentials');
 
-        $olderThanDays = null;
-        if (isset($_POST['older_than_days']) && $_POST['older_than_days'] !== '') {
-            $olderThanDays = max(1, (int) sanitize_text_field(wp_unslash((string) $_POST['older_than_days'])));
-        }
-        $onlyWithoutMatch = isset($_POST['only_without_match']) && (string) $_POST['only_without_match'] === '1';
-
-        $result = FC_Api_Client::purge_submissions($olderThanDays, $onlyWithoutMatch);
+        delete_option(FC_Settings::OPTION_KEY);
+        delete_transient(FC_Settings::TOKEN_TRANSIENT);
+        delete_transient(FC_Settings::TOKEN_TRANSIENT . '_read');
+        delete_transient(FC_Settings::TOKEN_TRANSIENT . '_write');
 
         $redirect = add_query_arg(
             [
-                'page' => 'fc-dashboard',
-                'fc_purge' => is_wp_error($result) ? 'error' : 'ok',
-                'fc_message' => is_wp_error($result)
-                    ? rawurlencode($result->get_error_message())
-                    : rawurlencode('Registros eliminados: ' . (string) ((int) ($result['deleted_count'] ?? 0)))
+                'page' => 'fc-settings',
+                'fc_notice' => 'ok',
+                'fc_message' => rawurlencode('Credenciales locales eliminadas')
             ],
             admin_url('admin.php')
         );
@@ -269,14 +255,14 @@ final class FC_Admin
 
     private static function render_notice(): void
     {
-        if (!isset($_GET['fc_purge'])) {
+        if (!isset($_GET['fc_notice'])) {
             return;
         }
 
-        $isError = (string) $_GET['fc_purge'] === 'error';
+        $isError = (string) $_GET['fc_notice'] === 'error';
         $message = isset($_GET['fc_message'])
             ? sanitize_text_field(wp_unslash((string) $_GET['fc_message']))
-            : ($isError ? 'Error al borrar registros' : 'Proceso completado');
+            : ($isError ? 'Operacion con error' : 'Proceso completado');
 
         $class = $isError ? 'notice notice-error' : 'notice notice-success';
         printf('<div class="%s"><p>%s</p></div>', esc_attr($class), esc_html($message));

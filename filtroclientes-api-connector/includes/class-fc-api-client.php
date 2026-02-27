@@ -67,19 +67,6 @@ final class FC_Api_Client
         ]);
     }
 
-    public static function purge_submissions(?int $olderThanDays = null, bool $onlyWithoutMatch = false)
-    {
-        $query = [];
-        if ($olderThanDays !== null && $olderThanDays > 0) {
-            $query['olderThanDays'] = max(1, min(3650, $olderThanDays));
-        }
-        if ($onlyWithoutMatch) {
-            $query['onlyWithoutMatch'] = 'true';
-        }
-
-        return self::request_json('/api/submissions', $query, 'DELETE', 'write');
-    }
-
     public static function fetch_submission_by_id(string $externalId, int $maxPages = 20, int $pageLimit = 200)
     {
         $target = trim($externalId);
