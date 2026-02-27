@@ -50,6 +50,10 @@ function normalizeText(value: unknown) {
     .trim();
 }
 
+function normalizeStrictLabel(value: unknown) {
+  return normalizeText(value).replace(/\s+/g, ' ');
+}
+
 function parseScaleValue(value: string | null, map: Record<string, number>) {
   if (!value) return null;
   const direct = Number.parseInt(value, 10);
@@ -146,7 +150,10 @@ function matchDisease(study: StudyDoc, disease: string | null, diseaseType: stri
     if (nonGenericStudy.length === 0) {
       return { matched: false, studyCandidates };
     }
-    const matchedByType = nonGenericStudy.some(studyValue => textBiDirectionalMatch(patientType, studyValue));
+    const patientTypeStrict = normalizeStrictLabel(patientType);
+    const matchedByType = nonGenericStudy.some(studyValue => {
+      return normalizeStrictLabel(studyValue) === patientTypeStrict;
+    });
     return { matched: matchedByType, studyCandidates };
   }
 
