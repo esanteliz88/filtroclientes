@@ -25,6 +25,20 @@ function splitCsv(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function normalizeYesNo(value: unknown): 'si' | 'no' | null {
+  const cleaned = cleanText(value);
+  if (typeof cleaned !== 'string' || cleaned.length === 0) return null;
+  const normalized = cleaned
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+
+  if (['si', 'yes', 'true', '1'].includes(normalized)) return 'si';
+  if (['no', 'false', '0'].includes(normalized)) return 'no';
+  return null;
+}
+
 function normalizeCentroList(value: unknown): string[] {
   const synonyms: Record<string, string> = {
     faizer: 'pfizer',
@@ -90,7 +104,10 @@ function toUserRef(value: unknown) {
 }
 
 export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake {
-  const yesNoValues = new Set(['si', 'sÃ­', 'no', 'yes', 'true', 'false', '1', '0']);
+  const yesNoValues = new Set(['si', 'sí', 'no', 'yes', 'true', 'false', '1', '0']);
+  const explicitSubtype = toNullableString(payload.subtipo_enfermedad);
+  const explicitSubtypeKey = toNullableString(payload.subtipo_clave);
+
   const subtipoEntry = Object.entries(payload).find(([key, value]) => {
     if (!key.startsWith('subtipo_') || typeof value !== 'string') return false;
     const cleaned = value.trim();
@@ -102,12 +119,15 @@ export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake
     return !yesNoValues.has(lowered);
   });
 
+  const tratamiento = toNullableString(payload.tratamiento);
+  const tratamientoTipo = normalizeYesNo(tratamiento) === 'no' ? [] : splitCsv(payload.tratamiento_tipo);
+
   return {
     derivador: toNullableString(payload.derivador),
     enfermedad: toNullableString(payload.enfermedad),
     tipo_enfermedad: toNullableString(payload.tipo_enfermedad),
-    subtipo_enfermedad: subtipoEntry ? toNullableString(subtipoEntry[1]) : null,
-    subtipo_clave: subtipoEntry ? subtipoEntry[0] : null,
+    subtipo_enfermedad: explicitSubtype ?? (subtipoEntry ? toNullableString(subtipoEntry[1]) : null),
+    subtipo_clave: explicitSubtypeKey ?? (subtipoEntry ? subtipoEntry[0] : null),
     sexo: toNullableString(payload.sexo),
     region: toNullableString(payload.region),
     ciudad: toNullableString(payload.ciudad),
@@ -115,8 +135,8 @@ export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake
     cirugia: toNullableString(payload.cirugia),
     cirugia_fecha: toNullableString(payload.cirugia_fecha),
     cirugia_descripcion: toNullableString(payload.cirugia_descripcion),
-    tratamiento: toNullableString(payload.tratamiento),
-    tratamiento_tipo: splitCsv(payload.tratamiento_tipo),
+    tratamiento,
+    tratamiento_tipo: tratamientoTipo,
     ecog_dolor: toNullableString(payload.ecog_dolor),
     ecog_descanso: toNullableString(payload.ecog_descanso),
     ecog_ayuda: toNullableString(payload.ecog_ayuda),
