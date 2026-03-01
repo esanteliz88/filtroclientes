@@ -20,6 +20,8 @@ Plugin WordPress con:
    - Client ID
    - Client Secret
    - Limite sync
+   - Portal Email (super admin)
+   - Portal Password
 
 ## Permisos requeridos en API
 El client configurado en WP debe tener:
@@ -43,3 +45,9 @@ define('FILTROCLIENTES_API_CLIENT_SECRET', 'tu-secret');
 ```
 
 Las constantes tienen prioridad sobre settings guardados.
+
+Opcional (portal super admin):
+```php
+define('FILTROCLIENTES_PORTAL_EMAIL', 'superadmin@dominio.com');
+define('FILTROCLIENTES_PORTAL_PASSWORD', 'tu-clave');
+```

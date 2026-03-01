@@ -20,6 +20,9 @@ final class FC_Admin
 
         add_submenu_page('fc-dashboard', 'Dashboard', 'Dashboard', 'manage_options', 'fc-dashboard', [self::class, 'render_dashboard_page']);
         add_submenu_page('fc-dashboard', 'Conexion API', 'Conexion API', 'manage_options', 'fc-settings', [self::class, 'render_settings_page']);
+        if (FC_Api_Client::can_manage_studies()) {
+            add_submenu_page('fc-dashboard', 'Estudios clinicos', 'Estudios clinicos', 'manage_options', 'fc-studies', [self::class, 'render_studies_page']);
+        }
         add_submenu_page(null, 'Ficha clinica', 'Ficha clinica', 'manage_options', 'fc-record', [self::class, 'render_record_page']);
     }
 
@@ -124,6 +127,14 @@ final class FC_Admin
                         <tr>
                             <th scope="row"><label for="fc_default_limit">Limite pagina</label></th>
                             <td><input id="fc_default_limit" name="<?php echo esc_attr(FC_Settings::OPTION_KEY); ?>[default_limit]" type="number" min="1" max="200" class="small-text" value="<?php echo esc_attr((string) $settings['default_limit']); ?>"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_portal_email">Portal Email (super admin)</label></th>
+                            <td><input id="fc_portal_email" name="<?php echo esc_attr(FC_Settings::OPTION_KEY); ?>[portal_email]" type="email" class="regular-text" value="<?php echo esc_attr($settings['portal_email'] ?? ''); ?>"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_portal_password">Portal Password</label></th>
+                            <td><input id="fc_portal_password" name="<?php echo esc_attr(FC_Settings::OPTION_KEY); ?>[portal_password]" type="password" class="regular-text" value="<?php echo esc_attr($settings['portal_password'] ?? ''); ?>" autocomplete="new-password"></td>
                         </tr>
                     </table>
                     <?php submit_button('Guardar configuracion'); ?>
@@ -232,6 +243,140 @@ final class FC_Admin
         <?php
     }
 
+    public static function render_studies_page(): void
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        if (!FC_Api_Client::can_manage_studies()) {
+            echo '<div class="wrap"><h1>Estudios clinicos</h1><div class="notice notice-error"><p>No autorizado. Solo super admin.</p></div></div>';
+            return;
+        }
+
+        $search = isset($_GET['fc_study_search']) ? sanitize_text_field(wp_unslash((string) $_GET['fc_study_search'])) : '';
+        $studiesResponse = FC_Api_Client::fetch_studies(50, 0, $search);
+        $studiesError = is_wp_error($studiesResponse) ? $studiesResponse : null;
+        $studies = [];
+        if (!$studiesError && is_array($studiesResponse)) {
+            $studies = isset($studiesResponse['studies']) && is_array($studiesResponse['studies']) ? $studiesResponse['studies'] : [];
+        }
+
+        ?>
+        <div class="wrap fc-wrap">
+            <h1>Estudios clinicos</h1>
+            <?php if ($studiesError) : ?>
+                <div class="notice notice-error"><p><?php echo esc_html('Error leyendo API: ' . $studiesError->get_error_message()); ?></p></div>
+            <?php endif; ?>
+            <?php self::render_notice(); ?>
+
+            <div class="fc-panel">
+                <form method="get" class="fc-filters">
+                    <input type="hidden" name="page" value="fc-studies">
+                    <input type="text" name="fc_study_search" placeholder="Buscar protocolo / enfermedad / subtipo" value="<?php echo esc_attr($search); ?>">
+                    <button class="button button-primary" type="submit">Buscar</button>
+                </form>
+            </div>
+
+            <div class="fc-panel">
+                <h2>Crear / actualizar estudio</h2>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <input type="hidden" name="action" value="fc_study_upsert">
+                    <?php wp_nonce_field('fc_study_upsert'); ?>
+                    <table class="form-table" role="presentation">
+                        <tr>
+                            <th scope="row"><label for="fc_study_id">ID (vacío para crear)</label></th>
+                            <td><input id="fc_study_id" name="study_id" type="text" class="regular-text" value=""></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_protocolo">Protocolo</label></th>
+                            <td><input id="fc_study_protocolo" name="protocolo" type="text" class="regular-text" required></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_enfermedad">Enfermedad</label></th>
+                            <td><input id="fc_study_enfermedad" name="enfermedad" type="text" class="regular-text" required></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_tipo">Tipo enfermedad</label></th>
+                            <td><input id="fc_study_tipo" name="tipo_enfermedad" type="text" class="regular-text"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_subtipo">Subtipo</label></th>
+                            <td><input id="fc_study_subtipo" name="subtipo" type="text" class="regular-text"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_fase">Fase</label></th>
+                            <td><input id="fc_study_fase" name="fase_protocolo" type="number" min="0" class="small-text"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_estado">Estado protocolo</label></th>
+                            <td><input id="fc_study_estado" name="estado_protocolo" type="text" class="regular-text" value="reclutando"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_nct">ClinicalTrials ID</label></th>
+                            <td><input id="fc_study_nct" name="cod_clinical_trials_protocolo" type="text" class="regular-text"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_url">ClinicalTrials URL</label></th>
+                            <td><input id="fc_study_url" name="url_clinical_trials_protocolo" type="url" class="regular-text"></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="fc_study_centros">Centros (coma)</label></th>
+                            <td><input id="fc_study_centros" name="centros_protocolo" type="text" class="regular-text" placeholder="saga, otro"></td>
+                        </tr>
+                    </table>
+                    <?php submit_button('Guardar estudio'); ?>
+                </form>
+            </div>
+
+            <div class="fc-panel">
+                <h2>Listado</h2>
+                <table class="widefat striped">
+                    <thead>
+                        <tr>
+                            <th>Protocolo</th>
+                            <th>Enfermedad</th>
+                            <th>Tipo</th>
+                            <th>Subtipo</th>
+                            <th>Estado</th>
+                            <th>Centros</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($studies)) : ?>
+                            <tr><td colspan="7">Sin estudios.</td></tr>
+                        <?php else : ?>
+                            <?php foreach ($studies as $study) : ?>
+                                <?php
+                                $id = isset($study['_id']) ? (is_array($study['_id']) ? ($study['_id']['$oid'] ?? '') : $study['_id']) : '';
+                                $centros = isset($study['centros_protocolo']) && is_array($study['centros_protocolo']) ? implode(', ', $study['centros_protocolo']) : '';
+                                ?>
+                                <tr>
+                                    <td><?php echo esc_html((string) ($study['protocolo'] ?? '')); ?></td>
+                                    <td><?php echo esc_html((string) ($study['enfermedad'] ?? '')); ?></td>
+                                    <td><?php echo esc_html((string) ($study['tipo_enfermedad'] ?? '')); ?></td>
+                                    <td><?php echo esc_html((string) ($study['subtipo'] ?? '')); ?></td>
+                                    <td><?php echo esc_html((string) ($study['estado_protocolo'] ?? '')); ?></td>
+                                    <td><?php echo esc_html($centros); ?></td>
+                                    <td>
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Eliminar este estudio?');" style="display:inline;">
+                                            <input type="hidden" name="action" value="fc_study_delete">
+                                            <input type="hidden" name="study_id" value="<?php echo esc_attr((string) $id); ?>">
+                                            <?php wp_nonce_field('fc_study_delete'); ?>
+                                            <button class="button button-small">Eliminar</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php
+    }
+
     public static function handle_clear_credentials(): void
     {
         if (!current_user_can('manage_options')) {
@@ -244,12 +389,95 @@ final class FC_Admin
         delete_transient(FC_Settings::TOKEN_TRANSIENT);
         delete_transient(FC_Settings::TOKEN_TRANSIENT . '_read');
         delete_transient(FC_Settings::TOKEN_TRANSIENT . '_write');
+        delete_transient(FC_Settings::PORTAL_TOKEN_TRANSIENT);
+        delete_transient(FC_Settings::PORTAL_ROLE_TRANSIENT);
 
         $redirect = add_query_arg(
             [
                 'page' => 'fc-settings',
                 'fc_notice' => 'ok',
                 'fc_message' => rawurlencode('Credenciales locales eliminadas')
+            ],
+            admin_url('admin.php')
+        );
+
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    public static function handle_study_upsert(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die('No autorizado');
+        }
+
+        check_admin_referer('fc_study_upsert');
+
+        if (!FC_Api_Client::can_manage_studies()) {
+            wp_die('No autorizado');
+        }
+
+        $studyId = isset($_POST['study_id']) ? sanitize_text_field(wp_unslash((string) $_POST['study_id'])) : '';
+        $centros = isset($_POST['centros_protocolo']) ? sanitize_text_field(wp_unslash((string) $_POST['centros_protocolo'])) : '';
+        $payload = [
+            'protocolo' => isset($_POST['protocolo']) ? sanitize_text_field(wp_unslash((string) $_POST['protocolo'])) : '',
+            'enfermedad' => isset($_POST['enfermedad']) ? sanitize_text_field(wp_unslash((string) $_POST['enfermedad'])) : '',
+            'tipo_enfermedad' => isset($_POST['tipo_enfermedad']) ? sanitize_text_field(wp_unslash((string) $_POST['tipo_enfermedad'])) : '',
+            'subtipo' => isset($_POST['subtipo']) ? sanitize_text_field(wp_unslash((string) $_POST['subtipo'])) : '',
+            'fase_protocolo' => isset($_POST['fase_protocolo']) ? (int) $_POST['fase_protocolo'] : null,
+            'estado_protocolo' => isset($_POST['estado_protocolo']) ? sanitize_text_field(wp_unslash((string) $_POST['estado_protocolo'])) : '',
+            'cod_clinical_trials_protocolo' => isset($_POST['cod_clinical_trials_protocolo']) ? sanitize_text_field(wp_unslash((string) $_POST['cod_clinical_trials_protocolo'])) : '',
+            'url_clinical_trials_protocolo' => isset($_POST['url_clinical_trials_protocolo']) ? esc_url_raw((string) $_POST['url_clinical_trials_protocolo']) : '',
+            'centros_protocolo' => $centros !== '' ? array_map('trim', explode(',', $centros)) : []
+        ];
+
+        $payload = array_filter($payload, static function ($value) {
+            return $value !== null;
+        });
+
+        $result = $studyId !== '' ? FC_Api_Client::update_study($studyId, $payload) : FC_Api_Client::create_study($payload);
+        $notice = is_wp_error($result) ? 'error' : 'ok';
+        $message = is_wp_error($result) ? $result->get_error_message() : 'Estudio guardado';
+
+        $redirect = add_query_arg(
+            [
+                'page' => 'fc-studies',
+                'fc_notice' => $notice,
+                'fc_message' => rawurlencode($message)
+            ],
+            admin_url('admin.php')
+        );
+
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    public static function handle_study_delete(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die('No autorizado');
+        }
+
+        check_admin_referer('fc_study_delete');
+
+        if (!FC_Api_Client::can_manage_studies()) {
+            wp_die('No autorizado');
+        }
+
+        $studyId = isset($_POST['study_id']) ? sanitize_text_field(wp_unslash((string) $_POST['study_id'])) : '';
+        if ($studyId === '') {
+            wp_die('Falta ID');
+        }
+
+        $result = FC_Api_Client::delete_study($studyId);
+        $notice = is_wp_error($result) ? 'error' : 'ok';
+        $message = is_wp_error($result) ? $result->get_error_message() : 'Estudio eliminado';
+
+        $redirect = add_query_arg(
+            [
+                'page' => 'fc-studies',
+                'fc_notice' => $notice,
+                'fc_message' => rawurlencode($message)
             ],
             admin_url('admin.php')
         );
