@@ -188,7 +188,7 @@ function matchSubtype(study: StudyDoc, subtype: string | null) {
   ]);
 
   if (studySubtypeCandidates.length === 0) {
-    return { matched: true, studyCandidates: studySubtypeCandidates };
+    return { matched: false, studyCandidates: studySubtypeCandidates };
   }
 
   const matched = studySubtypeCandidates.some(studyValue => textBiDirectionalMatch(patientSubtype, studyValue));
