@@ -105,6 +105,47 @@ export async function portalRoutes(app: App) {
   );
 
   app.get(
+    '/submissions/:id/derivation',
+    { config: { auth: true, scopes: ['portal'], permissions: false } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!requireSuperAdmin(request.user)) {
+        return reply.code(403).send({ error: 'super_admin_only' });
+      }
+
+      const id = String((request.params as { id?: string }).id ?? '');
+      if (!Types.ObjectId.isValid(id)) return reply.code(400).send({ error: 'invalid_id' });
+
+      const submission = await IntakeSubmission.findById(id).lean();
+      if (!submission) return reply.code(404).send({ error: 'submission_not_found' });
+
+      const currentCenterTotal =
+        typeof submission?.match === 'object' && submission?.match !== null
+          ? Number((submission.match as Record<string, unknown>).total_matches ?? 0)
+          : 0;
+
+      const cross = (submission.matchCrossCenter as Record<string, unknown> | null) ?? null;
+      const studiesOtherCenters = Array.isArray(cross?.studies_other_centers) ? cross?.studies_other_centers : [];
+
+      return {
+        submissionId: String(submission._id),
+        companyCodes: submission.companyCodes ?? [],
+        sourceUserRef: submission.sourceUserRef ?? null,
+        createdAt: submission.createdAt ?? null,
+        current_center: {
+          total_matches: currentCenterTotal,
+          studies: (submission.match as Record<string, unknown> | null)?.studies ?? []
+        },
+        derivation: {
+          total_matches_all_centers: Number(cross?.total_matches_all_centers ?? 0),
+          total_matches_other_centers: Number(cross?.total_matches_other_centers ?? studiesOtherCenters.length),
+          studies_other_centers: studiesOtherCenters
+        },
+        debug: submission.matchDebug ?? null
+      };
+    }
+  );
+
+  app.get(
     '/studies',
     { config: { auth: true, scopes: ['portal'], permissions: false } },
     async (request: FastifyRequest, reply: FastifyReply) => {
