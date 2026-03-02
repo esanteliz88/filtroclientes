@@ -65,6 +65,25 @@ function normalizeCentroList(value: unknown): string[] {
   });
 }
 
+function normalizeKey(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+}
+
+function deriveTratamientoFromMetastasisQuestion(payload: UnknownRecord): 'si' | 'no' | null {
+  for (const [key, value] of Object.entries(payload)) {
+    const keyNormalized = normalizeKey(key);
+    if (!keyNormalized.includes('tratamiento')) continue;
+    if (!keyNormalized.includes('metast')) continue;
+    const answer = normalizeYesNo(value);
+    if (answer) return answer;
+  }
+  return null;
+}
+
 export type NormalizedIntake = {
   derivador: string | null;
   enfermedad: string | null;
@@ -133,7 +152,9 @@ export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake
     return !yesNoValues.has(lowered);
   });
 
-  const tratamiento = toNullableString(payload.tratamiento);
+  const tratamientoOverride = deriveTratamientoFromMetastasisQuestion(payload);
+  const tratamientoBase = toNullableString(payload.tratamiento);
+  const tratamiento = tratamientoOverride ?? tratamientoBase;
   const tratamientoTipo = normalizeYesNo(tratamiento) === 'no' ? [] : splitCsv(payload.tratamiento_tipo);
 
   return {
