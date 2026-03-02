@@ -141,6 +141,21 @@ final class FC_Api_Client
         return $role === 'super_admin';
     }
 
+    public static function can_view_matrix()
+    {
+        $role = self::get_portal_role(false);
+        if (is_wp_error($role)) {
+            return false;
+        }
+        return in_array($role, ['super_admin', 'company_admin', 'company_user'], true);
+    }
+
+    public static function get_portal_role_cached()
+    {
+        $role = self::get_portal_role(false);
+        return is_wp_error($role) ? null : $role;
+    }
+
     public static function fetch_studies(int $limit = 50, int $skip = 0, string $search = '')
     {
         $query = [

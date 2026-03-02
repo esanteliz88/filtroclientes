@@ -62,7 +62,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>FiltroClientes Dashboard</h1>
-            <p><small>Build 2.0.6 (match-matrix)</small></p>
+            <p><small>Build 2.0.8 (match-matrix)</small></p>
             <?php if ($metricsError) : ?>
                 <div class="notice notice-error"><p><?php echo esc_html('Error leyendo API: ' . $metricsError->get_error_message()); ?></p></div>
             <?php endif; ?>
@@ -106,7 +106,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>Conexion API</h1>
-            <p><small>Build 2.0.6 (match-matrix)</small></p>
+            <p><small>Build 2.0.8 (match-matrix)</small></p>
             <?php self::render_notice(); ?>
             <div class="fc-panel">
                 <form method="post" action="options.php">
@@ -181,7 +181,7 @@ final class FC_Admin
 
         $derivation = null;
         $derivationError = null;
-        if (FC_Api_Client::can_manage_studies()) {
+        if (FC_Api_Client::can_view_matrix()) {
             $derivation = FC_Api_Client::fetch_submission_derivation($externalId);
             if (is_wp_error($derivation)) {
                 $derivationError = $derivation;
@@ -240,19 +240,9 @@ final class FC_Admin
                 </ul>
             </div>
 
-            <div class="fc-record-card">
-                <h2>JSON completo</h2>
-                <h3>Normalized</h3>
-                <pre><?php echo esc_html(wp_json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
-                <h3>Match</h3>
-                <pre><?php echo esc_html(wp_json_encode($matchPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
-                <h3>Raw payload</h3>
-                <pre><?php echo esc_html(wp_json_encode($rawPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
-            </div>
-
-            <?php if (FC_Api_Client::can_manage_studies()) : ?>
+            <?php if (FC_Api_Client::can_view_matrix()) : ?>
                 <div class="fc-record-card">
-                    <h2>Matriz de match (super admin)</h2>
+                    <h2>Matriz de match</h2>
                     <?php if ($derivationError) : ?>
                         <div class="notice notice-error"><p><?php echo esc_html($derivationError->get_error_message()); ?></p></div>
                     <?php elseif (!is_array($derivation)) : ?>
@@ -262,11 +252,34 @@ final class FC_Admin
                         $debug = isset($derivation['debug']) && is_array($derivation['debug']) ? $derivation['debug'] : [];
                         $patient = isset($debug['patient_snapshot']) && is_array($debug['patient_snapshot']) ? $debug['patient_snapshot'] : [];
                         $studyResults = isset($debug['study_results']) && is_array($debug['study_results']) ? $debug['study_results'] : [];
+                        $portalRole = FC_Api_Client::get_portal_role_cached();
+                        $onlyCenter = $portalRole !== 'super_admin';
+                        $filteredResults = [];
+                        foreach ($studyResults as $study) {
+                            if (!is_array($study)) {
+                                continue;
+                            }
+                            $reasons = isset($study['reasons']) && is_array($study['reasons']) ? $study['reasons'] : [];
+                            $reasonCodes = array_map(static function ($r) {
+                                return is_array($r) && isset($r['code']) ? (string) $r['code'] : '';
+                            }, $reasons);
+                            $hasReason = static function (array $codes, string $needle): bool {
+                                return in_array($needle, $codes, true);
+                            };
+                            // Show only same disease/type and same center when not super_admin.
+                            if ($hasReason($reasonCodes, 'disease_mismatch')) {
+                                continue;
+                            }
+                            if ($onlyCenter && $hasReason($reasonCodes, 'center_mismatch')) {
+                                continue;
+                            }
+                            $filteredResults[] = $study;
+                        }
                         ?>
-                        <?php if (empty($studyResults)) : ?>
-                            <p class="fc-muted">Sin evaluaciones disponibles.</p>
+                        <?php if (empty($filteredResults)) : ?>
+                            <p class="fc-muted">No hay estudios relevantes para este tipo y centro.</p>
                         <?php else : ?>
-                            <?php foreach ($studyResults as $study) : ?>
+                            <?php foreach ($filteredResults as $study) : ?>
                                 <?php
                                 if (!is_array($study)) {
                                     continue;
@@ -279,10 +292,14 @@ final class FC_Admin
                                     return in_array($needle, $codes, true);
                                 };
                                 $eligible = isset($study['eligible']) ? (bool) $study['eligible'] : false;
+                                $isOtherCenter = $hasReason($reasonCodes, 'center_mismatch');
                                 ?>
                                 <div class="fc-match-block">
                                     <h3>
                                         <?php echo esc_html((string) ($study['protocolo'] ?? 'Estudio')); ?>
+                                        <?php if ($portalRole === 'super_admin' && $isOtherCenter) : ?>
+                                            <span class="fc-badge fc-badge--neutral">Otro centro</span>
+                                        <?php endif; ?>
                                         <span class="fc-badge <?php echo $eligible ? 'fc-badge--ok' : 'fc-badge--no'; ?>">
                                             <?php echo $eligible ? 'Match' : 'No match'; ?>
                                         </span>
@@ -302,61 +319,62 @@ final class FC_Admin
                                                 [
                                                     'label' => 'Enfermedad/Tipo',
                                                     'patient' => isset($patient['tipo_enfermedad']) ? FC_Shortcodes::value_to_string($patient['tipo_enfermedad']) : '',
-                                                    'study' => isset($study['compared']['disease']['study_disease_candidates']) ? FC_Shortcodes::value_to_string($study['compared']['disease']['study_disease_candidates']) : '',
+                                                    'study' => isset($study['compared']['disease']['study_disease_candidates']) ? self::format_value($study['compared']['disease']['study_disease_candidates']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'disease_mismatch')
                                                 ],
                                                 [
                                                     'label' => 'Subtipo',
                                                     'patient' => isset($patient['subtipo_enfermedad']) ? FC_Shortcodes::value_to_string($patient['subtipo_enfermedad']) : '',
-                                                    'study' => isset($study['compared']['subtype']['study_subtype_candidates']) ? FC_Shortcodes::value_to_string($study['compared']['subtype']['study_subtype_candidates']) : '',
+                                                    'study' => isset($study['compared']['subtype']['study_subtype_candidates']) ? self::format_value($study['compared']['subtype']['study_subtype_candidates']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'subtype_mismatch')
                                                 ],
                                                 [
                                                     'label' => 'Centro',
                                                     'patient' => isset($patient['centros_scope']) ? FC_Shortcodes::value_to_string($patient['centros_scope']) : '',
-                                                    'study' => isset($study['compared']['centers']['study_centros_protocolo']) ? FC_Shortcodes::value_to_string($study['compared']['centers']['study_centros_protocolo']) : '',
+                                                    'study' => isset($study['compared']['centers']['study_centros_protocolo']) ? self::format_value($study['compared']['centers']['study_centros_protocolo']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'center_mismatch')
                                                 ],
                                                 [
                                                     'label' => 'Metastasis',
                                                     'patient' => isset($patient['metastasis']) ? FC_Shortcodes::value_to_string($patient['metastasis']) : '',
-                                                    'study' => isset($study['compared']['rules_yes_no']['metastasis']['study']) ? FC_Shortcodes::value_to_string($study['compared']['rules_yes_no']['metastasis']['study']) : '',
+                                                    'study' => isset($study['compared']['rules_yes_no']['metastasis']['study']) ? self::format_value($study['compared']['rules_yes_no']['metastasis']['study']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'metastasis_rule')
                                                 ],
                                                 [
                                                     'label' => 'Cirugia',
                                                     'patient' => isset($patient['cirugia']) ? FC_Shortcodes::value_to_string($patient['cirugia']) : '',
-                                                    'study' => isset($study['compared']['rules_yes_no']['cirugia']['study']) ? FC_Shortcodes::value_to_string($study['compared']['rules_yes_no']['cirugia']['study']) : '',
+                                                    'study' => isset($study['compared']['rules_yes_no']['cirugia']['study']) ? self::format_value($study['compared']['rules_yes_no']['cirugia']['study']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'cirugia_rule')
                                                 ],
                                                 [
                                                     'label' => 'Tratamiento',
                                                     'patient' => isset($patient['tratamiento']) ? FC_Shortcodes::value_to_string($patient['tratamiento']) : '',
-                                                    'study' => isset($study['compared']['rules_yes_no']['tratamiento']['study']) ? FC_Shortcodes::value_to_string($study['compared']['rules_yes_no']['tratamiento']['study']) : '',
+                                                    'study' => isset($study['compared']['rules_yes_no']['tratamiento']['study']) ? self::format_value($study['compared']['rules_yes_no']['tratamiento']['study']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'tratamiento_rule')
                                                 ],
                                                 [
                                                     'label' => 'Tipos de tratamiento',
                                                     'patient' => isset($patient['tratamiento_tipo']) ? FC_Shortcodes::value_to_string($patient['tratamiento_tipo']) : '',
-                                                    'study' => isset($study['compared']['treatment_types']['study']) ? FC_Shortcodes::value_to_string($study['compared']['treatment_types']['study']) : '',
+                                                    'study' => isset($study['compared']['treatment_types']['study']) ? self::format_treatment_map($study['compared']['treatment_types']['study']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'treatment_type_rule')
                                                 ],
                                                 [
                                                     'label' => 'ECOG',
                                                     'patient' => isset($patient['ecog_score']) ? FC_Shortcodes::value_to_string($patient['ecog_score']) : '',
-                                                    'study' => isset($study['compared']['ecog']) ? FC_Shortcodes::value_to_string($study['compared']['ecog']) : '',
+                                                    'study' => isset($study['compared']['ecog']) ? self::format_ecog($study['compared']['ecog']) : '',
                                                     'bad' => $hasReason($reasonCodes, 'ecog_below_min') || $hasReason($reasonCodes, 'ecog_above_max')
                                                 ]
                                             ];
                                             foreach ($rows as $row) :
                                                 $statusClass = $row['bad'] ? 'fc-match-bad' : 'fc-match-ok';
                                                 $statusText = $row['bad'] ? 'No' : 'Si';
+                                                $statusIcon = $row['bad'] ? '✕' : '✓';
                                             ?>
                                                 <tr class="<?php echo esc_attr($statusClass); ?>">
                                                     <td><?php echo esc_html($row['label']); ?></td>
                                                     <td><?php echo esc_html((string) $row['patient']); ?></td>
                                                     <td><?php echo esc_html((string) $row['study']); ?></td>
-                                                    <td><span class="fc-pill"><?php echo esc_html($statusText); ?></span></td>
+                                                    <td><span class="fc-pill"><?php echo esc_html($statusIcon . ' ' . $statusText); ?></span></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -369,11 +387,64 @@ final class FC_Admin
             <?php else : ?>
                 <div class="fc-record-card">
                     <h2>Matriz de match (super admin)</h2>
-                    <p class="fc-muted">Configura Portal Email/Password con un usuario super admin para ver la matriz.</p>
+                    <p class="fc-muted">Configura Portal Email/Password para ver la matriz.</p>
                 </div>
             <?php endif; ?>
         </div>
         <?php
+    }
+
+    private static function format_value($value): string
+    {
+        if (is_array($value)) {
+            $isList = array_keys($value) === range(0, count($value) - 1);
+            if ($isList) {
+                return implode(', ', array_map('strval', $value));
+            }
+            $pairs = [];
+            foreach ($value as $k => $v) {
+                $pairs[] = $k . ': ' . (is_scalar($v) ? (string) $v : wp_json_encode($v));
+            }
+            return implode(', ', $pairs);
+        }
+        if ($value === null) return '';
+        return (string) $value;
+    }
+
+    private static function format_treatment_map($value): string
+    {
+        if (!is_array($value)) {
+            return self::format_value($value);
+        }
+        $labels = [
+            'quimioterapia' => 'Quimioterapia',
+            'radioterapia' => 'Radioterapia',
+            'inmunoterapia' => 'Inmunoterapia',
+            'terapia_hormonal' => 'Terapia hormonal',
+            'terapia_dirigida' => 'Terapia dirigida'
+        ];
+        $items = [];
+        foreach ($labels as $key => $label) {
+            if (!array_key_exists($key, $value)) {
+                continue;
+            }
+            $raw = is_scalar($value[$key]) ? (string) $value[$key] : '';
+            $items[] = $label . ': ' . $raw;
+        }
+        return implode(', ', $items);
+    }
+
+    private static function format_ecog($value): string
+    {
+        if (!is_array($value)) {
+            return self::format_value($value);
+        }
+        $min = isset($value['study_ecog_min']) ? (string) $value['study_ecog_min'] : '';
+        $max = isset($value['study_ecog_max']) ? (string) $value['study_ecog_max'] : '';
+        if ($min !== '' || $max !== '') {
+            return 'Min: ' . $min . ' / Max: ' . $max;
+        }
+        return '';
     }
 
     public static function render_studies_page(): void

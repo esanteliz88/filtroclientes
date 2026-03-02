@@ -136,6 +136,12 @@
   color: #991b1b;
 }
 
+.fc-badge--neutral {
+  background: #e2e8f0;
+  color: #475569;
+  margin-left: 6px;
+}
+
 .fc-record {
   max-width: 1200px;
 }
@@ -222,6 +228,11 @@
   font-size: 12px;
   border: 1px solid #cbd5f5;
   background: #ffffff;
+}
+
+.fc-match-table td:last-child {
+  text-align: center;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {
