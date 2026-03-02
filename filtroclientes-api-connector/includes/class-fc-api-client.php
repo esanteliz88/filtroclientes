@@ -122,6 +122,16 @@ final class FC_Api_Client
         return new WP_Error('fc_not_found', 'No se encontro el registro en API.');
     }
 
+    public static function fetch_submission_derivation(string $externalId)
+    {
+        $target = trim($externalId);
+        if ($target === '') {
+            return new WP_Error('fc_missing_id', 'Falta external_id.');
+        }
+
+        return self::request_portal_json('/admin/submissions/' . rawurlencode($target) . '/derivation');
+    }
+
     public static function can_manage_studies()
     {
         $role = self::get_portal_role(false);

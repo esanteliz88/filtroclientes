@@ -181,6 +181,49 @@
   line-height: 1.45;
 }
 
+.fc-match-block {
+  margin-bottom: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.fc-match-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fc-match-table th,
+.fc-match-table td {
+  border: 1px solid #e2e8f0;
+  padding: 8px 10px;
+  vertical-align: top;
+}
+
+.fc-match-table th {
+  background: #f1f5f9;
+  text-align: left;
+}
+
+.fc-match-ok {
+  background: #ecfdf5;
+}
+
+.fc-match-bad {
+  background: #fef2f2;
+}
+
+.fc-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid #cbd5f5;
+  background: #ffffff;
+}
+
 @media (max-width: 900px) {
   .fc-record-grid {
     grid-template-columns: 1fr;
