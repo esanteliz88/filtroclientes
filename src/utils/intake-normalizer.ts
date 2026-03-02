@@ -74,6 +74,8 @@ function normalizeKey(value: unknown) {
 }
 
 function deriveTratamientoFromMetastasisQuestion(payload: UnknownRecord): 'si' | 'no' | null {
+  const explicit = normalizeYesNo(payload.tratamiento_despues_metastasis);
+  if (explicit) return explicit;
   for (const [key, value] of Object.entries(payload)) {
     const keyNormalized = normalizeKey(key);
     if (!keyNormalized.includes('tratamiento')) continue;
