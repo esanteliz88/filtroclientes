@@ -62,7 +62,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>FiltroClientes Dashboard</h1>
-            <p><small>Build 2.0.5 (token-scope-fix)</small></p>
+            <p><small>Build 2.0.6 (match-matrix)</small></p>
             <?php if ($metricsError) : ?>
                 <div class="notice notice-error"><p><?php echo esc_html('Error leyendo API: ' . $metricsError->get_error_message()); ?></p></div>
             <?php endif; ?>
@@ -106,7 +106,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>Conexion API</h1>
-            <p><small>Build 2.0.5 (token-scope-fix)</small></p>
+            <p><small>Build 2.0.6 (match-matrix)</small></p>
             <?php self::render_notice(); ?>
             <div class="fc-panel">
                 <form method="post" action="options.php">
@@ -365,6 +365,11 @@ final class FC_Admin
                             <?php endforeach; ?>
                         <?php endif; ?>
                     <?php endif; ?>
+                </div>
+            <?php else : ?>
+                <div class="fc-record-card">
+                    <h2>Matriz de match (super admin)</h2>
+                    <p class="fc-muted">Configura Portal Email/Password con un usuario super admin para ver la matriz.</p>
                 </div>
             <?php endif; ?>
         </div>

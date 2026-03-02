@@ -129,7 +129,7 @@ final class FC_Api_Client
             return new WP_Error('fc_missing_id', 'Falta external_id.');
         }
 
-        return self::request_portal_json('/admin/submissions/' . rawurlencode($target) . '/derivation');
+        return self::request_portal_json('/portal/submissions/' . rawurlencode($target) . '/derivation');
     }
 
     public static function can_manage_studies()
