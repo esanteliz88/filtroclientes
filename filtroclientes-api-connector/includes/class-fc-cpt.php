@@ -6,14 +6,14 @@ if (!defined('ABSPATH')) {
 
 final class FC_CPT
 {
-    public const POST_TYPE = 'fc_submission';
+    public const POST_TYPE = 'filtro_submission';
 
     public static function register(): void
     {
         register_post_type(self::POST_TYPE, [
             'labels' => [
-                'name' => 'Registros API',
-                'singular_name' => 'Registro API'
+                'name' => 'Registros Filtro',
+                'singular_name' => 'Registro Filtro'
             ],
             'public' => false,
             'show_ui' => true,
