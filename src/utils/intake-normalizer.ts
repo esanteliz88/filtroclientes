@@ -1,4 +1,4 @@
-type UnknownRecord = Record<string, unknown>;
+﻿type UnknownRecord = Record<string, unknown>;
 
 function decodeEscapedText(input: string) {
   return input
@@ -9,7 +9,21 @@ function decodeEscapedText(input: string) {
 function cleanText(value: unknown) {
   if (typeof value !== 'string') return value;
   const decoded = decodeEscapedText(value).trim();
-  return decoded.normalize('NFC');
+  let normalized = decoded.normalize('NFC');
+
+  // Fix common latin1/utf8 mojibake (e.g. "PulmÃ³n" -> "Pulmón").
+  if (/[ÃÂ]|u00[0-9a-fA-F]{2}/.test(normalized)) {
+    try {
+      const latin1 = Buffer.from(normalized, 'latin1').toString('utf8');
+      if (latin1) {
+        normalized = latin1;
+      }
+    } catch {
+      // ignore conversion errors
+    }
+  }
+
+  return normalized;
 }
 
 function splitCsv(value: unknown): string[] {
@@ -104,7 +118,7 @@ function toUserRef(value: unknown) {
 }
 
 export function normalizeIntakePayload(payload: UnknownRecord): NormalizedIntake {
-  const yesNoValues = new Set(['si', 's�', 'no', 'yes', 'true', 'false', '1', '0']);
+  const yesNoValues = new Set(['si', 'sí', 'no', 'yes', 'true', 'false', '1', '0']);
   const explicitSubtype = toNullableString(payload.subtipo_enfermedad);
   const explicitSubtypeKey = toNullableString(payload.subtipo_clave);
 
