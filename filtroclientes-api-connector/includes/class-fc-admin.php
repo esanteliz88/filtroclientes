@@ -62,7 +62,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>FiltroClientes Dashboard</h1>
-            <p><small>Build 2.0.9 (match-matrix)</small></p>
+            <p><small>Build 2.0.10 (match-matrix)</small></p>
             <?php if ($metricsError) : ?>
                 <div class="notice notice-error"><p><?php echo esc_html('Error leyendo API: ' . $metricsError->get_error_message()); ?></p></div>
             <?php endif; ?>
@@ -106,7 +106,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>Conexion API</h1>
-            <p><small>Build 2.0.9 (match-matrix)</small></p>
+            <p><small>Build 2.0.10 (match-matrix)</small></p>
             <?php self::render_notice(); ?>
             <div class="fc-panel">
                 <form method="post" action="options.php">
@@ -521,11 +521,11 @@ final class FC_Admin
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_tipo">Tipo enfermedad</label></th>
-                            <td><input id="fc_study_tipo" name="tipo_enfermedad" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['tipo_enfermedad'] ?? '')); ?>"></td>
+                            <td><input id="fc_study_tipo" name="tipo_enfermedad" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['tipo_enfermedad'] ?? ($editStudy['tipo'] ?? ''))); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_subtipo">Subtipo</label></th>
-                            <td><input id="fc_study_subtipo" name="subtipo" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['subtipo'] ?? '')); ?>"></td>
+                            <td><input id="fc_study_subtipo" name="subtipo" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['subtipo'] ?? ($editStudy['subtipo_enfermedad'] ?? ''))); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_fase">Fase</label></th>
@@ -588,13 +588,15 @@ final class FC_Admin
                                 <?php
                                 $id = isset($study['_id']) ? (is_array($study['_id']) ? ($study['_id']['$oid'] ?? '') : $study['_id']) : '';
                                 $centros = isset($study['centros_protocolo']) && is_array($study['centros_protocolo']) ? implode(', ', $study['centros_protocolo']) : '';
+                                $tipo = (string) ($study['tipo_enfermedad'] ?? ($study['tipo'] ?? ''));
+                                $subtipo = (string) ($study['subtipo'] ?? ($study['subtipo_enfermedad'] ?? ''));
                                 $activo = isset($study['activo']) ? (bool) $study['activo'] : true;
                                 ?>
                                 <tr>
                                     <td><?php echo esc_html((string) ($study['protocolo'] ?? '')); ?></td>
                                     <td><?php echo esc_html((string) ($study['enfermedad'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) ($study['tipo_enfermedad'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) ($study['subtipo'] ?? '')); ?></td>
+                                    <td><?php echo esc_html($tipo); ?></td>
+                                    <td><?php echo esc_html($subtipo); ?></td>
                                     <td><?php echo esc_html((string) ($study['estado_protocolo'] ?? '')); ?></td>
                                     <td>
                                         <span class="fc-badge <?php echo $activo ? 'fc-badge--ok' : 'fc-badge--no'; ?>">
@@ -681,6 +683,10 @@ final class FC_Admin
             'centros_protocolo' => $centros !== '' ? array_map('trim', explode(',', $centros)) : [],
             'activo' => isset($_POST['activo']) ? true : false
         ];
+
+        if ($payload['subtipo'] !== '') {
+            $payload['subtipo_enfermedad'] = $payload['subtipo'];
+        }
 
         $payload = array_filter($payload, static function ($value) {
             return $value !== null;
