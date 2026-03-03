@@ -318,12 +318,9 @@ export async function portalRoutes(app: App) {
         (updateDoc.$set as Record<string, unknown>).deletedAt = new Date();
       }
 
-      const query: Record<string, unknown> = { _id: id };
-      if (!wantsRestore) {
-        query.deletedAt = { $exists: false };
-      }
-
-      const updated = await ClinicalStudy.findOneAndUpdate(query, updateDoc, { new: true }).lean();
+      const updated = await ClinicalStudy.findOneAndUpdate({ _id: id }, updateDoc, {
+        new: true
+      }).lean();
       if (!updated) return reply.code(404).send({ error: 'study_not_found' });
       return {
         study: {
