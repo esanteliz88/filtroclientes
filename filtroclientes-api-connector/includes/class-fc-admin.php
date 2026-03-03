@@ -62,7 +62,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>FiltroClientes Dashboard</h1>
-            <p><small>Build 2.0.10 (match-matrix)</small></p>
+            <p><small>Build 2.0.11 (match-matrix)</small></p>
             <?php if ($metricsError) : ?>
                 <div class="notice notice-error"><p><?php echo esc_html('Error leyendo API: ' . $metricsError->get_error_message()); ?></p></div>
             <?php endif; ?>
@@ -106,7 +106,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>Conexion API</h1>
-            <p><small>Build 2.0.10 (match-matrix)</small></p>
+            <p><small>Build 2.0.11 (match-matrix)</small></p>
             <?php self::render_notice(); ?>
             <div class="fc-panel">
                 <form method="post" action="options.php">
@@ -459,8 +459,8 @@ final class FC_Admin
         }
 
         $search = isset($_GET['fc_study_search']) ? sanitize_text_field(wp_unslash((string) $_GET['fc_study_search'])) : '';
-        $includeDisabled = isset($_GET['fc_study_include_disabled']) && ((string) $_GET['fc_study_include_disabled'] === '1');
-        $studiesResponse = FC_Api_Client::fetch_studies(200, 0, $search, $includeDisabled);
+        $includeDisabled = true;
+        $studiesResponse = FC_Api_Client::fetch_studies(200, 0, $search, true);
         $studiesError = is_wp_error($studiesResponse) ? $studiesResponse : null;
         $studies = [];
         if (!$studiesError && is_array($studiesResponse)) {
@@ -490,10 +490,6 @@ final class FC_Admin
                 <form method="get" class="fc-filters">
                     <input type="hidden" name="page" value="fc-studies">
                     <input type="text" name="fc_study_search" placeholder="Buscar protocolo / enfermedad / subtipo" value="<?php echo esc_attr($search); ?>">
-                    <label class="fc-inline">
-                        <input type="checkbox" name="fc_study_include_disabled" value="1" <?php checked($includeDisabled); ?>>
-                        Mostrar deshabilitados
-                    </label>
                     <button class="button button-primary" type="submit">Buscar</button>
                 </form>
             </div>
@@ -615,8 +611,7 @@ final class FC_Admin
                                         <a class="button button-small" href="<?php echo esc_url(add_query_arg([
                                             'page' => 'fc-studies',
                                             'fc_edit_id' => (string) $id,
-                                            'fc_study_search' => $search,
-                                            'fc_study_include_disabled' => $includeDisabled ? '1' : ''
+                                            'fc_study_search' => $search
                                         ], admin_url('admin.php'))); ?>">Editar</a>
                                     </td>
                                 </tr>
