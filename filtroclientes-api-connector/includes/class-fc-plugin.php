@@ -21,7 +21,7 @@ final class FC_Plugin
         add_action('admin_init', [FC_CPT::class, 'block_manual_create_screen']);
         add_action('admin_post_fc_clear_credentials', [FC_Admin::class, 'handle_clear_credentials']);
         add_action('admin_post_fc_study_upsert', [FC_Admin::class, 'handle_study_upsert']);
-        add_action('admin_post_fc_study_delete', [FC_Admin::class, 'handle_study_delete']);
+        add_action('admin_post_fc_study_toggle', [FC_Admin::class, 'handle_study_toggle']);
         add_shortcode('filtroclientes_registros', [FC_Shortcodes::class, 'render_submissions_table']);
     }
 }

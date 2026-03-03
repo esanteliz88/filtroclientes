@@ -528,6 +528,15 @@ final class FC_Admin
                             <th scope="row"><label for="fc_study_centros">Centros (coma)</label></th>
                             <td><input id="fc_study_centros" name="centros_protocolo" type="text" class="regular-text" placeholder="saga, otro"></td>
                         </tr>
+                        <tr>
+                            <th scope="row">Activo</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="activo" value="1" checked>
+                                    Habilitado
+                                </label>
+                            </td>
+                        </tr>
                     </table>
                     <?php submit_button('Guardar estudio'); ?>
                 </form>
@@ -543,18 +552,20 @@ final class FC_Admin
                             <th>Tipo</th>
                             <th>Subtipo</th>
                             <th>Estado</th>
+                            <th>Activo</th>
                             <th>Centros</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($studies)) : ?>
-                            <tr><td colspan="7">Sin estudios.</td></tr>
+                            <tr><td colspan="8">Sin estudios.</td></tr>
                         <?php else : ?>
                             <?php foreach ($studies as $study) : ?>
                                 <?php
                                 $id = isset($study['_id']) ? (is_array($study['_id']) ? ($study['_id']['$oid'] ?? '') : $study['_id']) : '';
                                 $centros = isset($study['centros_protocolo']) && is_array($study['centros_protocolo']) ? implode(', ', $study['centros_protocolo']) : '';
+                                $activo = isset($study['activo']) ? (bool) $study['activo'] : true;
                                 ?>
                                 <tr>
                                     <td><?php echo esc_html((string) ($study['protocolo'] ?? '')); ?></td>
@@ -562,13 +573,19 @@ final class FC_Admin
                                     <td><?php echo esc_html((string) ($study['tipo_enfermedad'] ?? '')); ?></td>
                                     <td><?php echo esc_html((string) ($study['subtipo'] ?? '')); ?></td>
                                     <td><?php echo esc_html((string) ($study['estado_protocolo'] ?? '')); ?></td>
+                                    <td>
+                                        <span class="fc-badge <?php echo $activo ? 'fc-badge--ok' : 'fc-badge--no'; ?>">
+                                            <?php echo $activo ? 'Si' : 'No'; ?>
+                                        </span>
+                                    </td>
                                     <td><?php echo esc_html($centros); ?></td>
                                     <td>
-                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Eliminar este estudio?');" style="display:inline;">
-                                            <input type="hidden" name="action" value="fc_study_delete">
+                                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('<?php echo $activo ? 'Deshabilitar este estudio?' : 'Habilitar este estudio?'; ?>');" style="display:inline;">
+                                            <input type="hidden" name="action" value="fc_study_toggle">
                                             <input type="hidden" name="study_id" value="<?php echo esc_attr((string) $id); ?>">
-                                            <?php wp_nonce_field('fc_study_delete'); ?>
-                                            <button class="button button-small">Eliminar</button>
+                                            <input type="hidden" name="activo" value="<?php echo $activo ? '0' : '1'; ?>">
+                                            <?php wp_nonce_field('fc_study_toggle'); ?>
+                                            <button class="button button-small"><?php echo $activo ? 'Deshabilitar' : 'Habilitar'; ?></button>
                                         </form>
                                     </td>
                                 </tr>
@@ -632,7 +649,8 @@ final class FC_Admin
             'estado_protocolo' => isset($_POST['estado_protocolo']) ? sanitize_text_field(wp_unslash((string) $_POST['estado_protocolo'])) : '',
             'cod_clinical_trials_protocolo' => isset($_POST['cod_clinical_trials_protocolo']) ? sanitize_text_field(wp_unslash((string) $_POST['cod_clinical_trials_protocolo'])) : '',
             'url_clinical_trials_protocolo' => isset($_POST['url_clinical_trials_protocolo']) ? esc_url_raw((string) $_POST['url_clinical_trials_protocolo']) : '',
-            'centros_protocolo' => $centros !== '' ? array_map('trim', explode(',', $centros)) : []
+            'centros_protocolo' => $centros !== '' ? array_map('trim', explode(',', $centros)) : [],
+            'activo' => isset($_POST['activo']) ? true : false
         ];
 
         $payload = array_filter($payload, static function ($value) {
@@ -656,13 +674,13 @@ final class FC_Admin
         exit;
     }
 
-    public static function handle_study_delete(): void
+    public static function handle_study_toggle(): void
     {
         if (!current_user_can('manage_options')) {
             wp_die('No autorizado');
         }
 
-        check_admin_referer('fc_study_delete');
+        check_admin_referer('fc_study_toggle');
 
         if (!FC_Api_Client::can_manage_studies()) {
             wp_die('No autorizado');
@@ -673,9 +691,10 @@ final class FC_Admin
             wp_die('Falta ID');
         }
 
-        $result = FC_Api_Client::delete_study($studyId);
+        $activo = isset($_POST['activo']) ? (bool) ((string) $_POST['activo'] === '1') : false;
+        $result = FC_Api_Client::update_study($studyId, ['activo' => $activo]);
         $notice = is_wp_error($result) ? 'error' : 'ok';
-        $message = is_wp_error($result) ? $result->get_error_message() : 'Estudio eliminado';
+        $message = is_wp_error($result) ? $result->get_error_message() : ($activo ? 'Estudio habilitado' : 'Estudio deshabilitado');
 
         $redirect = add_query_arg(
             [
