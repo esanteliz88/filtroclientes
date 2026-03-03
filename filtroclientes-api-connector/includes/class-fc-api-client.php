@@ -156,7 +156,7 @@ final class FC_Api_Client
         return is_wp_error($role) ? null : $role;
     }
 
-    public static function fetch_studies(int $limit = 50, int $skip = 0, string $search = '')
+    public static function fetch_studies(int $limit = 50, int $skip = 0, string $search = '', bool $includeDisabled = false)
     {
         $query = [
             'limit' => max(1, min(200, $limit)),
@@ -165,13 +165,20 @@ final class FC_Api_Client
         if (trim($search) !== '') {
             $query['search'] = $search;
         }
+        if ($includeDisabled) {
+            $query['includeDisabled'] = 'true';
+        }
 
         return self::request_portal_json('/portal/studies', $query);
     }
 
-    public static function fetch_study_by_id(string $studyId)
+    public static function fetch_study_by_id(string $studyId, bool $includeDisabled = false)
     {
-        return self::request_portal_json('/portal/studies/' . rawurlencode($studyId));
+        $query = [];
+        if ($includeDisabled) {
+            $query['includeDisabled'] = 'true';
+        }
+        return self::request_portal_json('/portal/studies/' . rawurlencode($studyId), $query);
     }
 
     public static function create_study(array $payload)

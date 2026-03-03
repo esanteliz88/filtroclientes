@@ -62,7 +62,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>FiltroClientes Dashboard</h1>
-            <p><small>Build 2.0.8 (match-matrix)</small></p>
+            <p><small>Build 2.0.9 (match-matrix)</small></p>
             <?php if ($metricsError) : ?>
                 <div class="notice notice-error"><p><?php echo esc_html('Error leyendo API: ' . $metricsError->get_error_message()); ?></p></div>
             <?php endif; ?>
@@ -106,7 +106,7 @@ final class FC_Admin
         ?>
         <div class="wrap fc-wrap">
             <h1>Conexion API</h1>
-            <p><small>Build 2.0.8 (match-matrix)</small></p>
+            <p><small>Build 2.0.9 (match-matrix)</small></p>
             <?php self::render_notice(); ?>
             <div class="fc-panel">
                 <form method="post" action="options.php">
@@ -459,7 +459,8 @@ final class FC_Admin
         }
 
         $search = isset($_GET['fc_study_search']) ? sanitize_text_field(wp_unslash((string) $_GET['fc_study_search'])) : '';
-        $studiesResponse = FC_Api_Client::fetch_studies(50, 0, $search);
+        $includeDisabled = isset($_GET['fc_study_include_disabled']) && ((string) $_GET['fc_study_include_disabled'] === '1');
+        $studiesResponse = FC_Api_Client::fetch_studies(200, 0, $search, $includeDisabled);
         $studiesError = is_wp_error($studiesResponse) ? $studiesResponse : null;
         $studies = [];
         if (!$studiesError && is_array($studiesResponse)) {
@@ -469,7 +470,7 @@ final class FC_Admin
         $editStudy = null;
         $editError = null;
         if ($editId !== '') {
-            $editResponse = FC_Api_Client::fetch_study($editId);
+            $editResponse = FC_Api_Client::fetch_study_by_id($editId, true);
             if (is_wp_error($editResponse)) {
                 $editError = $editResponse;
             } elseif (is_array($editResponse) && isset($editResponse['study']) && is_array($editResponse['study'])) {
@@ -489,6 +490,10 @@ final class FC_Admin
                 <form method="get" class="fc-filters">
                     <input type="hidden" name="page" value="fc-studies">
                     <input type="text" name="fc_study_search" placeholder="Buscar protocolo / enfermedad / subtipo" value="<?php echo esc_attr($search); ?>">
+                    <label class="fc-inline">
+                        <input type="checkbox" name="fc_study_include_disabled" value="1" <?php checked($includeDisabled); ?>>
+                        Mostrar deshabilitados
+                    </label>
                     <button class="button button-primary" type="submit">Buscar</button>
                 </form>
             </div>
@@ -605,7 +610,12 @@ final class FC_Admin
                                             <?php wp_nonce_field('fc_study_toggle'); ?>
                                             <button class="button button-small"><?php echo $activo ? 'Deshabilitar' : 'Habilitar'; ?></button>
                                         </form>
-                                        <a class="button button-small" href="<?php echo esc_url(add_query_arg(['page' => 'fc-studies', 'fc_edit_id' => (string) $id], admin_url('admin.php'))); ?>">Editar</a>
+                                        <a class="button button-small" href="<?php echo esc_url(add_query_arg([
+                                            'page' => 'fc-studies',
+                                            'fc_edit_id' => (string) $id,
+                                            'fc_study_search' => $search,
+                                            'fc_study_include_disabled' => $includeDisabled ? '1' : ''
+                                        ], admin_url('admin.php'))); ?>">Editar</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
