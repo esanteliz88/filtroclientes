@@ -397,7 +397,10 @@ export async function findMatchingStudies(normalized: NormalizedIntake, options:
   const subtype = normalized.subtipo_enfermedad;
   const centers = options.centersOverride === null ? [] : (options.centersOverride ?? normalized.centro);
 
-  const studies = (await ClinicalStudy.find({ estado_protocolo: /reclutando/i, deletedAt: { $exists: false } }).lean()) as StudyDoc[];
+  const studies = (await ClinicalStudy.find({
+    estado_protocolo: /reclutando/i,
+    $and: [{ $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }] }, { activo: { $ne: false } }]
+  }).lean()) as StudyDoc[];
   const evaluations = studies.map(study => evaluateStudy(study, normalized, ecogScore, disease, diseaseType, subtype, centers));
   const matchedIds = new Set(evaluations.filter(e => e.eligible).map(e => e.id));
   const matches = studies.filter(study => matchedIds.has(String(study._id ?? '')));

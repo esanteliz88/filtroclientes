@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { IntakeSubmission } from '../models/IntakeSubmission.js';
 import { ClinicalStudy } from '../models/ClinicalStudy.js';
 import { Types } from 'mongoose';
+import { sendMatchWebhook } from '../services/n8n-webhook.js';
 const QuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(200).default(50),
     skip: z.coerce.number().int().min(0).default(0),
@@ -21,6 +22,10 @@ const StudiesQuery = z.object({
 });
 const StudyBody = z.record(z.unknown()).refine(data => Object.keys(data).length > 0, {
     message: 'study_payload_required'
+});
+const NotifyBody = z.object({
+    submissionId: z.string().optional(),
+    payload: z.record(z.unknown()).optional()
 });
 function buildUserSubmissionFilter(user) {
     if (user.actorType !== 'user')
@@ -139,26 +144,24 @@ export async function portalRoutes(app) {
             }
         }
         if (parsed.data.includeDisabled !== true) {
-            clauses.push({
-                $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }]
-            });
+            clauses.push({ $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }] });
         }
-        const filter = clauses.length === 0 ? {} : (clauses.length === 1 ? clauses[0] : { $and: clauses });
+        const filter = clauses.length === 0 ? {} : clauses.length === 1 ? clauses[0] : { $and: clauses };
         const studiesRaw = await ClinicalStudy.find(filter)
             .sort({ createdAt: -1 })
             .skip(parsed.data.skip)
             .limit(parsed.data.limit)
             .lean();
         const total = await ClinicalStudy.countDocuments(filter);
-        const studies = studiesRaw.map(study => ({
-            ...study,
-            activo: study.deletedAt ? false : true
-        }));
+        const formatted = studiesRaw.map(study => {
+            const doc = study;
+            return { ...doc, activo: doc.deletedAt ? false : true };
+        });
         return {
             total,
             limit: parsed.data.limit,
             skip: parsed.data.skip,
-            studies
+            studies: formatted
         };
     });
     app.get('/studies/all', { config: { auth: true, scopes: ['portal'], permissions: false } }, async (request, reply) => {
@@ -166,10 +169,10 @@ export async function portalRoutes(app) {
             return reply.code(403).send({ error: 'super_admin_only' });
         }
         const studiesRaw = await ClinicalStudy.find({}).sort({ createdAt: -1 }).lean();
-        const studies = studiesRaw.map(study => ({
-            ...study,
-            activo: study.deletedAt ? false : true
-        }));
+        const studies = studiesRaw.map(study => {
+            const doc = study;
+            return { ...doc, activo: doc.deletedAt ? false : true };
+        });
         return {
             total: studies.length,
             limit: studies.length,
@@ -191,7 +194,12 @@ export async function portalRoutes(app) {
         const study = await ClinicalStudy.findOne(baseFilter).lean();
         if (!study)
             return reply.code(404).send({ error: 'study_not_found' });
-        return { study: { ...study, activo: study.deletedAt ? false : true } };
+        return {
+            study: {
+                ...study,
+                activo: study.deletedAt ? false : true
+            }
+        };
     });
     app.post('/studies', { config: { auth: true, scopes: ['portal'], permissions: false } }, async (request, reply) => {
         if (!requireSuperAdmin(request.user)) {
@@ -202,12 +210,16 @@ export async function portalRoutes(app) {
             return reply.code(400).send({ error: 'invalid_request' });
         const payload = { ...parsed.data, createdAt: new Date(), updatedAt: new Date() };
         if (typeof payload.activo === 'boolean') {
-            payload.deletedAt = payload.activo ? null : new Date();
+            payload.deletedAt =
+                payload.activo ? null : new Date();
         }
         const created = await ClinicalStudy.create(payload);
-        const createdSafe = created?.toObject ? created.toObject() : created;
+        const createdSafe = created?.toObject?.() ?? created;
         return reply.code(201).send({
-            study: { ...createdSafe, activo: createdSafe?.deletedAt ? false : true }
+            study: {
+                ...createdSafe,
+                activo: createdSafe.deletedAt ? false : true
+            }
         });
     });
     app.patch('/studies/:id', { config: { auth: true, scopes: ['portal'], permissions: false } }, async (request, reply) => {
@@ -220,14 +232,31 @@ export async function portalRoutes(app) {
         const parsed = StudyBody.safeParse(request.body);
         if (!parsed.success)
             return reply.code(400).send({ error: 'invalid_request' });
-        const updates = { ...parsed.data, updatedAt: new Date() };
-        if (typeof updates.activo === 'boolean') {
-            updates.deletedAt = updates.activo ? null : new Date();
+        const payload = parsed.data;
+        const wantsRestore = payload.activo === true;
+        const wantsDisable = payload.activo === false;
+        const setUpdates = { ...payload, updatedAt: new Date() };
+        delete setUpdates.activo;
+        const updateDoc = { $set: setUpdates };
+        if (wantsRestore) {
+            updateDoc.$unset = { deletedAt: '' };
         }
-        const updated = await ClinicalStudy.findByIdAndUpdate(id, updates, { new: true }).lean();
+        if (wantsDisable) {
+            updateDoc.$set.deletedAt = new Date();
+        }
+        const query = { _id: id };
+        if (!wantsRestore) {
+            query.deletedAt = { $exists: false };
+        }
+        const updated = await ClinicalStudy.findOneAndUpdate(query, updateDoc, { new: true }).lean();
         if (!updated)
             return reply.code(404).send({ error: 'study_not_found' });
-        return { study: { ...updated, activo: updated.deletedAt ? false : true } };
+        return {
+            study: {
+                ...updated,
+                activo: updated.deletedAt ? false : true
+            }
+        };
     });
     app.delete('/studies/:id', { config: { auth: true, scopes: ['portal'], permissions: false } }, async (request, reply) => {
         if (!requireSuperAdmin(request.user)) {
@@ -236,9 +265,44 @@ export async function portalRoutes(app) {
         const id = String(request.params.id ?? '');
         if (!Types.ObjectId.isValid(id))
             return reply.code(400).send({ error: 'invalid_id' });
-        const updated = await ClinicalStudy.findByIdAndUpdate(id, { deletedAt: new Date(), updatedAt: new Date() }, { new: true }).lean();
-        if (!updated)
+        const deleted = await ClinicalStudy.findOneAndUpdate({ _id: id, deletedAt: { $exists: false } }, { deletedAt: new Date(), updatedAt: new Date() }, { new: true }).lean();
+        if (!deleted)
             return reply.code(404).send({ error: 'study_not_found' });
         return reply.code(204).send();
+    });
+    app.post('/notify-match', { config: { auth: true, scopes: ['portal'], permissions: false } }, async (request, reply) => {
+        if (!requireSuperAdmin(request.user)) {
+            return reply.code(403).send({ error: 'super_admin_only' });
+        }
+        const parsed = NotifyBody.safeParse(request.body);
+        if (!parsed.success)
+            return reply.code(400).send({ error: 'invalid_request' });
+        const submissionId = parsed.data.submissionId;
+        const payload = parsed.data.payload;
+        if (!submissionId && !payload) {
+            return reply.code(400).send({ error: 'submission_or_payload_required' });
+        }
+        if (payload) {
+            await sendMatchWebhook(app, { trigger: 'manual', ...payload });
+            return reply.code(202).send({ ok: true });
+        }
+        if (!Types.ObjectId.isValid(submissionId)) {
+            return reply.code(400).send({ error: 'invalid_id' });
+        }
+        const submission = await IntakeSubmission.findById(submissionId).lean();
+        if (!submission)
+            return reply.code(404).send({ error: 'submission_not_found' });
+        const match = submission.match;
+        const total = Number(match?.total_matches ?? 0);
+        const matchReason = total > 0 ? 'with_match' : 'no_match';
+        const topReasons = submission.matchDebug?.top_reasons ?? null;
+        await sendMatchWebhook(app, {
+            trigger: 'manual',
+            match_status: matchReason,
+            total_matches: total,
+            top_reasons: topReasons,
+            submission
+        });
+        return reply.code(202).send({ ok: true });
     });
 }

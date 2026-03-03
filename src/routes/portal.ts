@@ -18,7 +18,11 @@ const QuerySchema = z.object({
 const StudiesQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   skip: z.coerce.number().int().min(0).default(0),
-  search: z.string().optional()
+  search: z.string().optional(),
+  includeDisabled: z
+    .union([z.literal('true'), z.literal('false')])
+    .optional()
+    .transform(v => (v === undefined ? undefined : v === 'true'))
 });
 
 const StudyBody = z.record(z.unknown()).refine(data => Object.keys(data).length > 0, {
@@ -162,30 +166,37 @@ export async function portalRoutes(app: App) {
       const parsed = StudiesQuery.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      const filter: Record<string, unknown> = {};
+      const clauses: Record<string, unknown>[] = [];
       if (parsed.data.search) {
         const needle = parsed.data.search.trim();
         if (needle.length > 0) {
-          filter.$or = [
-            { protocolo: { $regex: needle, $options: 'i' } },
-            { enfermedad: { $regex: needle, $options: 'i' } },
-            { tipo_enfermedad: { $regex: needle, $options: 'i' } },
-            { subtipo: { $regex: needle, $options: 'i' } }
-          ];
+          clauses.push({
+            $or: [
+              { protocolo: { $regex: needle, $options: 'i' } },
+              { enfermedad: { $regex: needle, $options: 'i' } },
+              { tipo_enfermedad: { $regex: needle, $options: 'i' } },
+              { subtipo: { $regex: needle, $options: 'i' } }
+            ]
+          });
         }
       }
+      if (parsed.data.includeDisabled !== true) {
+        clauses.push({ $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }] });
+      }
+      const filter =
+        clauses.length === 0 ? {} : clauses.length === 1 ? clauses[0] : { $and: clauses };
 
-      const studies = await ClinicalStudy.find({ ...filter, deletedAt: { $exists: false } })
+      const studiesRaw = await ClinicalStudy.find(filter)
         .sort({ createdAt: -1 })
         .skip(parsed.data.skip)
         .limit(parsed.data.limit)
         .lean();
 
-      const total = await ClinicalStudy.countDocuments({ ...filter, deletedAt: { $exists: false } });
+      const total = await ClinicalStudy.countDocuments(filter);
 
-      const formatted = studies.map(study => {
+      const formatted = studiesRaw.map(study => {
         const doc = study as Record<string, unknown>;
-        return { ...doc, activo: true };
+        return { ...doc, activo: (doc as { deletedAt?: unknown }).deletedAt ? false : true };
       });
 
       return {
@@ -198,6 +209,29 @@ export async function portalRoutes(app: App) {
   );
 
   app.get(
+    '/studies/all',
+    { config: { auth: true, scopes: ['portal'], permissions: false } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!requireSuperAdmin(request.user)) {
+        return reply.code(403).send({ error: 'super_admin_only' });
+      }
+
+      const studiesRaw = await ClinicalStudy.find({}).sort({ createdAt: -1 }).lean();
+      const studies = studiesRaw.map(study => {
+        const doc = study as Record<string, unknown>;
+        return { ...doc, activo: (doc as { deletedAt?: unknown }).deletedAt ? false : true };
+      });
+
+      return {
+        total: studies.length,
+        limit: studies.length,
+        skip: 0,
+        studies
+      };
+    }
+  );
+
+  app.get(
     '/studies/:id',
     { config: { auth: true, scopes: ['portal'], permissions: false } },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -205,12 +239,22 @@ export async function portalRoutes(app: App) {
         return reply.code(403).send({ error: 'super_admin_only' });
       }
 
+      const includeDisabled =
+        String((request.query as { includeDisabled?: string })?.includeDisabled ?? '') === 'true';
       const id = String((request.params as { id?: string }).id ?? '');
       if (!Types.ObjectId.isValid(id)) return reply.code(400).send({ error: 'invalid_id' });
 
-      const study = await ClinicalStudy.findOne({ _id: id, deletedAt: { $exists: false } }).lean();
+      const baseFilter = includeDisabled
+        ? { _id: id }
+        : { _id: id, $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }] };
+      const study = await ClinicalStudy.findOne(baseFilter).lean();
       if (!study) return reply.code(404).send({ error: 'study_not_found' });
-      return { study: { ...(study as Record<string, unknown>), activo: true } };
+      return {
+        study: {
+          ...(study as Record<string, unknown>),
+          activo: (study as { deletedAt?: unknown }).deletedAt ? false : true
+        }
+      };
     }
   );
 
@@ -225,9 +269,23 @@ export async function portalRoutes(app: App) {
       const parsed = StudyBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      const payload = { ...parsed.data, createdAt: new Date(), updatedAt: new Date(), deletedAt: undefined };
+      const payload = { ...parsed.data, createdAt: new Date(), updatedAt: new Date() } as Record<
+        string,
+        unknown
+      >;
+      if (typeof (payload as { activo?: boolean }).activo === 'boolean') {
+        (payload as { deletedAt?: Date | null }).deletedAt =
+          (payload as { activo?: boolean }).activo ? null : new Date();
+      }
       const created = await ClinicalStudy.create(payload);
-      return reply.code(201).send({ study: created });
+      const createdSafe =
+        (created as unknown as { toObject?: () => Record<string, unknown> })?.toObject?.() ?? created;
+      return reply.code(201).send({
+        study: {
+          ...(createdSafe as Record<string, unknown>),
+          activo: (createdSafe as { deletedAt?: unknown }).deletedAt ? false : true
+        }
+      });
     }
   );
 
@@ -267,7 +325,12 @@ export async function portalRoutes(app: App) {
 
       const updated = await ClinicalStudy.findOneAndUpdate(query, updateDoc, { new: true }).lean();
       if (!updated) return reply.code(404).send({ error: 'study_not_found' });
-      return { study: updated };
+      return {
+        study: {
+          ...(updated as Record<string, unknown>),
+          activo: (updated as { deletedAt?: unknown }).deletedAt ? false : true
+        }
+      };
     }
   );
 
