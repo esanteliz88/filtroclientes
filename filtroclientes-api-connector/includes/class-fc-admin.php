@@ -465,6 +465,17 @@ final class FC_Admin
         if (!$studiesError && is_array($studiesResponse)) {
             $studies = isset($studiesResponse['studies']) && is_array($studiesResponse['studies']) ? $studiesResponse['studies'] : [];
         }
+        $editId = isset($_GET['fc_edit_id']) ? sanitize_text_field(wp_unslash((string) $_GET['fc_edit_id'])) : '';
+        $editStudy = null;
+        $editError = null;
+        if ($editId !== '') {
+            $editResponse = FC_Api_Client::fetch_study($editId);
+            if (is_wp_error($editResponse)) {
+                $editError = $editResponse;
+            } elseif (is_array($editResponse) && isset($editResponse['study']) && is_array($editResponse['study'])) {
+                $editStudy = $editResponse['study'];
+            }
+        }
 
         ?>
         <div class="wrap fc-wrap">
@@ -483,62 +494,69 @@ final class FC_Admin
             </div>
 
             <div class="fc-panel">
-                <h2>Crear / actualizar estudio</h2>
+                <h2><?php echo $editStudy ? 'Editar estudio' : 'Crear / actualizar estudio'; ?></h2>
+                <?php if ($editError) : ?>
+                    <div class="notice notice-error"><p><?php echo esc_html($editError->get_error_message()); ?></p></div>
+                <?php endif; ?>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <input type="hidden" name="action" value="fc_study_upsert">
                     <?php wp_nonce_field('fc_study_upsert'); ?>
                     <table class="form-table" role="presentation">
                         <tr>
                             <th scope="row"><label for="fc_study_id">ID (vacío para crear)</label></th>
-                            <td><input id="fc_study_id" name="study_id" type="text" class="regular-text" value=""></td>
+                            <td><input id="fc_study_id" name="study_id" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['_id'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_protocolo">Protocolo</label></th>
-                            <td><input id="fc_study_protocolo" name="protocolo" type="text" class="regular-text" required></td>
+                            <td><input id="fc_study_protocolo" name="protocolo" type="text" class="regular-text" required value="<?php echo esc_attr((string) ($editStudy['protocolo'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_enfermedad">Enfermedad</label></th>
-                            <td><input id="fc_study_enfermedad" name="enfermedad" type="text" class="regular-text" required></td>
+                            <td><input id="fc_study_enfermedad" name="enfermedad" type="text" class="regular-text" required value="<?php echo esc_attr((string) ($editStudy['enfermedad'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_tipo">Tipo enfermedad</label></th>
-                            <td><input id="fc_study_tipo" name="tipo_enfermedad" type="text" class="regular-text"></td>
+                            <td><input id="fc_study_tipo" name="tipo_enfermedad" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['tipo_enfermedad'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_subtipo">Subtipo</label></th>
-                            <td><input id="fc_study_subtipo" name="subtipo" type="text" class="regular-text"></td>
+                            <td><input id="fc_study_subtipo" name="subtipo" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['subtipo'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_fase">Fase</label></th>
-                            <td><input id="fc_study_fase" name="fase_protocolo" type="number" min="0" class="small-text"></td>
+                            <td><input id="fc_study_fase" name="fase_protocolo" type="number" min="0" class="small-text" value="<?php echo esc_attr((string) ($editStudy['fase_protocolo'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_estado">Estado protocolo</label></th>
-                            <td><input id="fc_study_estado" name="estado_protocolo" type="text" class="regular-text" value="reclutando"></td>
+                            <td><input id="fc_study_estado" name="estado_protocolo" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['estado_protocolo'] ?? 'reclutando')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_nct">ClinicalTrials ID</label></th>
-                            <td><input id="fc_study_nct" name="cod_clinical_trials_protocolo" type="text" class="regular-text"></td>
+                            <td><input id="fc_study_nct" name="cod_clinical_trials_protocolo" type="text" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['cod_clinical_trials_protocolo'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_url">ClinicalTrials URL</label></th>
-                            <td><input id="fc_study_url" name="url_clinical_trials_protocolo" type="url" class="regular-text"></td>
+                            <td><input id="fc_study_url" name="url_clinical_trials_protocolo" type="url" class="regular-text" value="<?php echo esc_attr((string) ($editStudy['url_clinical_trials_protocolo'] ?? '')); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row"><label for="fc_study_centros">Centros (coma)</label></th>
-                            <td><input id="fc_study_centros" name="centros_protocolo" type="text" class="regular-text" placeholder="saga, otro"></td>
+                            <td><input id="fc_study_centros" name="centros_protocolo" type="text" class="regular-text" placeholder="saga, otro" value="<?php echo esc_attr(isset($editStudy['centros_protocolo']) && is_array($editStudy['centros_protocolo']) ? implode(', ', $editStudy['centros_protocolo']) : ''); ?>"></td>
                         </tr>
                         <tr>
                             <th scope="row">Activo</th>
                             <td>
                                 <label>
-                                    <input type="checkbox" name="activo" value="1" checked>
+                                    <?php $isActive = isset($editStudy['activo']) ? (bool) $editStudy['activo'] : true; ?>
+                                    <input type="checkbox" name="activo" value="1" <?php checked($isActive); ?>>
                                     Habilitado
                                 </label>
                             </td>
                         </tr>
                     </table>
-                    <?php submit_button('Guardar estudio'); ?>
+                    <?php submit_button($editStudy ? 'Actualizar estudio' : 'Guardar estudio'); ?>
+                    <?php if ($editStudy) : ?>
+                        <a class="button button-secondary" href="<?php echo esc_url(admin_url('admin.php?page=fc-studies')); ?>">Cancelar edición</a>
+                    <?php endif; ?>
                 </form>
             </div>
 
@@ -587,6 +605,7 @@ final class FC_Admin
                                             <?php wp_nonce_field('fc_study_toggle'); ?>
                                             <button class="button button-small"><?php echo $activo ? 'Deshabilitar' : 'Habilitar'; ?></button>
                                         </form>
+                                        <a class="button button-small" href="<?php echo esc_url(add_query_arg(['page' => 'fc-studies', 'fc_edit_id' => (string) $id], admin_url('admin.php'))); ?>">Editar</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
