@@ -6,6 +6,7 @@ import { Client } from '../models/Client.js';
 import { IntakeSubmission } from '../models/IntakeSubmission.js';
 import { normalizeIntakePayload } from '../utils/intake-normalizer.js';
 import { findMatchingStudies } from '../services/study-matcher.js';
+import { sendMatchWebhook } from '../services/n8n-webhook.js';
 
 const IntakeBodySchema = z.record(z.any());
 
@@ -145,6 +146,26 @@ export async function intakeRoutes(app: App) {
 
     const canExposeCrossCenter =
       request.user?.actorType === 'user' && request.user?.role === 'super_admin';
+
+    const matchReason =
+      typeof match?.total_matches === 'number' && match.total_matches > 0 ? 'with_match' : 'no_match';
+    const topReasons = (match as { debug?: { top_reasons?: unknown } })?.debug?.top_reasons ?? null;
+
+    await sendMatchWebhook(app, {
+      trigger: 'intake',
+      match_status: matchReason,
+      total_matches: match.total_matches ?? 0,
+      top_reasons: topReasons,
+      submission: {
+        id: saved._id,
+        source: 'filtroclientes',
+        companyCodes: ownerCompanyCodes,
+        rawPayload,
+        normalized,
+        match,
+        matchCrossCenter
+      }
+    });
 
     return reply.code(201).send({
       ok: true,

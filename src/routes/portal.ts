@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { IntakeSubmission } from '../models/IntakeSubmission.js';
 import { ClinicalStudy } from '../models/ClinicalStudy.js';
 import { Types } from 'mongoose';
+import { sendMatchWebhook } from '../services/n8n-webhook.js';
 
 const QuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -22,6 +23,11 @@ const StudiesQuery = z.object({
 
 const StudyBody = z.record(z.unknown()).refine(data => Object.keys(data).length > 0, {
   message: 'study_payload_required'
+});
+
+const NotifyBody = z.object({
+  submissionId: z.string().optional(),
+  payload: z.record(z.unknown()).optional()
 });
 
 function buildUserSubmissionFilter(user: FastifyRequest['user']) {
@@ -169,19 +175,24 @@ export async function portalRoutes(app: App) {
         }
       }
 
-      const studies = await ClinicalStudy.find(filter)
+      const studies = await ClinicalStudy.find({ ...filter, deletedAt: { $exists: false } })
         .sort({ createdAt: -1 })
         .skip(parsed.data.skip)
         .limit(parsed.data.limit)
         .lean();
 
-      const total = await ClinicalStudy.countDocuments(filter);
+      const total = await ClinicalStudy.countDocuments({ ...filter, deletedAt: { $exists: false } });
+
+      const formatted = studies.map(study => {
+        const doc = study as Record<string, unknown>;
+        return { ...doc, activo: true };
+      });
 
       return {
         total,
         limit: parsed.data.limit,
         skip: parsed.data.skip,
-        studies
+        studies: formatted
       };
     }
   );
@@ -197,9 +208,9 @@ export async function portalRoutes(app: App) {
       const id = String((request.params as { id?: string }).id ?? '');
       if (!Types.ObjectId.isValid(id)) return reply.code(400).send({ error: 'invalid_id' });
 
-      const study = await ClinicalStudy.findById(id).lean();
+      const study = await ClinicalStudy.findOne({ _id: id, deletedAt: { $exists: false } }).lean();
       if (!study) return reply.code(404).send({ error: 'study_not_found' });
-      return { study };
+      return { study: { ...(study as Record<string, unknown>), activo: true } };
     }
   );
 
@@ -214,7 +225,7 @@ export async function portalRoutes(app: App) {
       const parsed = StudyBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      const payload = { ...parsed.data, createdAt: new Date(), updatedAt: new Date() };
+      const payload = { ...parsed.data, createdAt: new Date(), updatedAt: new Date(), deletedAt: undefined };
       const created = await ClinicalStudy.create(payload);
       return reply.code(201).send({ study: created });
     }
@@ -234,8 +245,27 @@ export async function portalRoutes(app: App) {
       const parsed = StudyBody.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
 
-      const updates = { ...parsed.data, updatedAt: new Date() };
-      const updated = await ClinicalStudy.findByIdAndUpdate(id, updates, { new: true }).lean();
+      const payload = parsed.data as Record<string, unknown>;
+      const wantsRestore = payload.activo === true;
+      const wantsDisable = payload.activo === false;
+
+      const setUpdates: Record<string, unknown> = { ...payload, updatedAt: new Date() };
+      delete setUpdates.activo;
+
+      const updateDoc: Record<string, unknown> = { $set: setUpdates };
+      if (wantsRestore) {
+        updateDoc.$unset = { deletedAt: '' };
+      }
+      if (wantsDisable) {
+        (updateDoc.$set as Record<string, unknown>).deletedAt = new Date();
+      }
+
+      const query: Record<string, unknown> = { _id: id };
+      if (!wantsRestore) {
+        query.deletedAt = { $exists: false };
+      }
+
+      const updated = await ClinicalStudy.findOneAndUpdate(query, updateDoc, { new: true }).lean();
       if (!updated) return reply.code(404).send({ error: 'study_not_found' });
       return { study: updated };
     }
@@ -252,9 +282,60 @@ export async function portalRoutes(app: App) {
       const id = String((request.params as { id?: string }).id ?? '');
       if (!Types.ObjectId.isValid(id)) return reply.code(400).send({ error: 'invalid_id' });
 
-      const result = await ClinicalStudy.deleteOne({ _id: id });
-      if (result.deletedCount === 0) return reply.code(404).send({ error: 'study_not_found' });
+      const deleted = await ClinicalStudy.findOneAndUpdate(
+        { _id: id, deletedAt: { $exists: false } },
+        { deletedAt: new Date(), updatedAt: new Date() },
+        { new: true }
+      ).lean();
+      if (!deleted) return reply.code(404).send({ error: 'study_not_found' });
       return reply.code(204).send();
+    }
+  );
+
+  app.post(
+    '/notify-match',
+    { config: { auth: true, scopes: ['portal'], permissions: false } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!requireSuperAdmin(request.user)) {
+        return reply.code(403).send({ error: 'super_admin_only' });
+      }
+
+      const parsed = NotifyBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_request' });
+
+      const submissionId = parsed.data.submissionId;
+      const payload = parsed.data.payload;
+
+      if (!submissionId && !payload) {
+        return reply.code(400).send({ error: 'submission_or_payload_required' });
+      }
+
+      if (payload) {
+        await sendMatchWebhook(app, { trigger: 'manual', ...payload });
+        return reply.code(202).send({ ok: true });
+      }
+
+      if (!Types.ObjectId.isValid(submissionId as string)) {
+        return reply.code(400).send({ error: 'invalid_id' });
+      }
+
+      const submission = await IntakeSubmission.findById(submissionId).lean();
+      if (!submission) return reply.code(404).send({ error: 'submission_not_found' });
+
+      const match = submission.match as Record<string, unknown> | null;
+      const total = Number(match?.total_matches ?? 0);
+      const matchReason = total > 0 ? 'with_match' : 'no_match';
+      const topReasons = (submission.matchDebug as { top_reasons?: unknown } | null)?.top_reasons ?? null;
+
+      await sendMatchWebhook(app, {
+        trigger: 'manual',
+        match_status: matchReason,
+        total_matches: total,
+        top_reasons: topReasons,
+        submission
+      });
+
+      return reply.code(202).send({ ok: true });
     }
   );
 }
